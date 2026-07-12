@@ -2,8 +2,10 @@ package main
 
 import (
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,9 +20,10 @@ import (
 )
 
 const (
-	maxPrivateKeyBytes  = 16 * 1024
-	maxCertificateBytes = 16 * 1024
-	maxFeedbackBytes    = 128 * 1024 * 1024
+	maxPrivateKeyBytes          = 16 * 1024
+	maxCertificateBytes         = 16 * 1024
+	maxFeedbackBytes            = 128 * 1024 * 1024
+	defaultFeedbackArtifactPath = "submission-feedback.cms"
 )
 
 var version = "dev"
@@ -129,6 +132,14 @@ func runPack(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("embedded organizer certificate: %w", err)
 	}
+	unchanged, err := existingSubmissionMatches(*outputPath, *teamID, prompt, privateKey, scorerCertificate)
+	if err != nil {
+		return err
+	}
+	if unchanged {
+		fmt.Fprintf(stdout, "Unchanged %s: existing signed submission has the same team ID and prompt SHA-256.\n", *outputPath)
+		return nil
+	}
 
 	if err := writeSubmissionAtomically(*outputPath, func(output io.Writer) error {
 		_, packErr := helper.Pack(helper.PackOptions{
@@ -188,7 +199,7 @@ func runInspect(args []string, stdout, stderr io.Writer) error {
 func runDecrypt(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("decrypt", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	artifactPath := flags.String("artifact", "discovery-feedback.cms", "encrypted feedback artifact")
+	artifactPath := flags.String("artifact", defaultFeedbackArtifactPath, "encrypted feedback artifact")
 	privateKeyPath := flags.String("private-key", "", "path to the team private key")
 	teamCertificatePath := flags.String("team-cert", "", "path to the team certificate")
 	outputPath := flags.String("out", "feedback", "empty output directory")
@@ -304,6 +315,25 @@ func readBoundedRegularFile(path string, limit int, label string) ([]byte, error
 	return payload, nil
 }
 
+func existingSubmissionMatches(outputPath, teamID string, prompt []byte, teamPrivateKey *rsa.PrivateKey, scorerCertificate *x509.Certificate) (bool, error) {
+	if _, err := os.Lstat(outputPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect existing submission: %w", err)
+	}
+	payload, err := readBoundedRegularFile(outputPath, helper.MaxSubmissionBytes, "existing submission archive")
+	if err != nil {
+		return false, fmt.Errorf("inspect existing submission: %w", err)
+	}
+	manifest, err := helper.InspectForSignerAndRecipient(payload, &teamPrivateKey.PublicKey, scorerCertificate)
+	if err != nil {
+		return false, fmt.Errorf("inspect existing submission: %w", err)
+	}
+	digest := sha256.Sum256(prompt)
+	return manifest.TeamID == teamID && manifest.PromptSHA256 == hex.EncodeToString(digest[:]), nil
+}
+
 func requirePrivatePermissions(path string) error {
 	if runtime.GOOS == "windows" {
 		return nil
@@ -374,6 +404,7 @@ Usage:
   hkpug-opik-helper pack    --team-id ID --private-key PATH [--prompt PATH] [--out PATH]
   hkpug-opik-helper inspect [--submission PATH] --team-cert PATH
   hkpug-opik-helper decrypt [--artifact PATH] --private-key PATH --team-cert PATH [--out DIR]
+    default artifact: submission-feedback.cms
   hkpug-opik-helper load    [--feedback DIR] [--opik-url URL] [--workspace NAME]
   hkpug-opik-helper version`)
 }

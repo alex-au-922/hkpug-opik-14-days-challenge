@@ -95,26 +95,47 @@ func Pack(options PackOptions) (Manifest, error) {
 }
 
 func Inspect(payload []byte, teamCertificate *x509.Certificate) (Manifest, error) {
-	return inspect(payload, teamCertificate, nil)
+	return inspectForTeam(payload, teamCertificate, nil)
 }
 
 func InspectForRecipient(payload []byte, teamCertificate, scorerCertificate *x509.Certificate) (Manifest, error) {
 	if scorerCertificate == nil {
 		return Manifest{}, errors.New("organizer certificate is required")
 	}
-	return inspect(payload, teamCertificate, scorerCertificate)
+	return inspectForTeam(payload, teamCertificate, scorerCertificate)
 }
 
-func inspect(payload []byte, teamCertificate, scorerCertificate *x509.Certificate) (Manifest, error) {
-	if len(payload) == 0 || len(payload) > MaxSubmissionBytes {
-		return Manifest{}, errors.New("submission archive size is invalid")
+func InspectForSignerAndRecipient(payload []byte, teamPublicKey *rsa.PublicKey, scorerCertificate *x509.Certificate) (Manifest, error) {
+	if scorerCertificate == nil {
+		return Manifest{}, errors.New("organizer certificate is required")
 	}
+	return inspectSigned(payload, teamPublicKey, scorerCertificate)
+}
+
+func inspectForTeam(payload []byte, teamCertificate, scorerCertificate *x509.Certificate) (Manifest, error) {
 	if teamCertificate == nil {
 		return Manifest{}, errors.New("team certificate is required")
 	}
 	publicKey, ok := teamCertificate.PublicKey.(*rsa.PublicKey)
 	if !ok {
 		return Manifest{}, errors.New("team certificate must contain an RSA public key")
+	}
+	manifest, err := inspectSigned(payload, publicKey, scorerCertificate)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if teamCertificate.Subject.CommonName != manifest.TeamID {
+		return Manifest{}, errors.New("manifest team ID does not match the team certificate")
+	}
+	return manifest, nil
+}
+
+func inspectSigned(payload []byte, teamPublicKey *rsa.PublicKey, scorerCertificate *x509.Certificate) (Manifest, error) {
+	if len(payload) == 0 || len(payload) > MaxSubmissionBytes {
+		return Manifest{}, errors.New("submission archive size is invalid")
+	}
+	if teamPublicKey == nil {
+		return Manifest{}, errors.New("team public key is required")
 	}
 	files, err := readSubmissionZip(payload)
 	if err != nil {
@@ -124,11 +145,8 @@ func inspect(payload []byte, teamCertificate, scorerCertificate *x509.Certificat
 	if err != nil {
 		return Manifest{}, err
 	}
-	if teamCertificate.Subject.CommonName != manifest.TeamID {
-		return Manifest{}, errors.New("manifest team ID does not match the team certificate")
-	}
 	digest := sha256.Sum256(files[manifestFilename])
-	if err := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, digest[:], files[signatureFilename]); err != nil {
+	if err := rsa.VerifyPKCS1v15(teamPublicKey, crypto.SHA256, digest[:], files[signatureFilename]); err != nil {
 		return Manifest{}, errors.New("manifest signature does not match the team certificate")
 	}
 	if err := validateCMSEnvelope(files[ciphertextFilename], scorerCertificate, "prompt ciphertext"); err != nil {
