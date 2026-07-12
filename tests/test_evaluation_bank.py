@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 import stat
 import subprocess
 from collections import Counter
@@ -187,9 +189,9 @@ def test_build_evaluation_bank_writes_canonical_json_and_fixed_partitions(
 
     bank = build_evaluation_bank(
         input_directory=input_directory,
-        output_path=output_path,
         public_directory=public_directory,
         repository_root=repository_root,
+        output_path=output_path,
     )
 
     assert isinstance(bank, EvaluationBank)
@@ -257,6 +259,36 @@ def mutate_unknown_context_file(
     ]
 
 
+def mutate_stray_public_context_file(
+    payloads: list[JsonDict], _public_cases: list[JsonDict]
+) -> None:
+    cast_case(payloads, 0, 0)["context_files"] = [
+        "contexts/company_handbook.md",
+        "contexts/stray.md",
+    ]
+    cast_reference(payloads, 0, 0)["citations"] = ["HB-GOV-001", "STR-ALT-001"]
+    cast_rubric(payloads, 0, 0)["required_citation_groups"] = [
+        ["HB-GOV-001"],
+        ["STR-ALT-001", "STR-ALT-002"],
+    ]
+    cast_rubric(payloads, 0, 0)["non_authoritative_evidence"] = ["STR-ARCH-001"]
+
+
+def mutate_wrong_domain_published_context(
+    payloads: list[JsonDict], _public_cases: list[JsonDict]
+) -> None:
+    cast_case(payloads, 0, 0)["context_files"] = [
+        "contexts/company_handbook.md",
+        "contexts/billing.md",
+    ]
+    cast_reference(payloads, 0, 0)["citations"] = ["HB-GOV-001", "BIL-AUTH-001"]
+    cast_rubric(payloads, 0, 0)["required_citation_groups"] = [
+        ["HB-GOV-001"],
+        ["BIL-AUTH-001", "BIL-AUTH-002"],
+    ]
+    cast_rubric(payloads, 0, 0)["non_authoritative_evidence"] = ["BIL-ARCH-001"]
+
+
 def mutate_unknown_reference_citation(
     payloads: list[JsonDict], _public_cases: list[JsonDict]
 ) -> None:
@@ -296,7 +328,9 @@ def mutate_wrong_total_case_count(
         (mutate_duplicate_question, "duplicate question"),
         (mutate_public_question_collision, "public practice question"),
         (mutate_reference_answer_too_long, "100 words"),
-        (mutate_unknown_context_file, "unknown context file"),
+        (mutate_unknown_context_file, "unknown context file|context-file combination"),
+        (mutate_stray_public_context_file, "context-file combination"),
+        (mutate_wrong_domain_published_context, "context-file combination"),
         (mutate_unknown_reference_citation, "unknown citation"),
         (mutate_extra_case_field, "Extra inputs are not permitted"),
         (mutate_extra_root_field, "Extra inputs are not permitted"),
@@ -309,8 +343,8 @@ def test_build_evaluation_bank_rejects_invariant_violations(
     mutate: Mutation,
     message: str,
 ) -> None:
-    public_directory, input_directory, public_cases = build_synthetic_evaluation_bank(
-        tmp_path
+    repository_root, public_directory, input_directory, public_cases = (
+        build_synthetic_evaluation_bank_in_repo(tmp_path)
     )
     payloads = load_domain_payloads(input_directory)
     mutate(payloads, public_cases)
@@ -319,34 +353,32 @@ def test_build_evaluation_bank_rejects_invariant_violations(
     with pytest.raises(ValueError, match=message):
         build_evaluation_bank(
             input_directory=input_directory,
-            output_path=tmp_path / ".local" / "evaluation" / "evaluation_bank.json",
             public_directory=public_directory,
+            repository_root=repository_root,
+            output_path=repository_root
+            / ".local"
+            / "evaluation"
+            / "evaluation_bank.json",
         )
 
 
-def test_build_evaluation_bank_rejects_output_paths_only_allowed_by_negation(
+def test_build_evaluation_bank_rejects_arbitrary_ignored_output_path(
     tmp_path: Path,
 ) -> None:
     repository_root = tmp_path / "repo"
     repository_root.mkdir(parents=True)
     subprocess.run(["git", "init", "-q", str(repository_root)], check=True)
-    (repository_root / ".gitignore").write_text(
-        ".local/evaluation/*.json\n!.local/evaluation/evaluation_bank.json\n",
-        encoding="utf-8",
-    )
+    (repository_root / ".gitignore").write_text(".local/\n", encoding="utf-8")
     public_directory, input_directory, _public_cases = build_synthetic_evaluation_bank(
         repository_root
     )
 
-    with pytest.raises(ValueError, match="negated"):
+    with pytest.raises(ValueError, match="canonical"):
         build_evaluation_bank(
             input_directory=input_directory,
-            output_path=repository_root
-            / ".local"
-            / "evaluation"
-            / "evaluation_bank.json",
             public_directory=public_directory,
             repository_root=repository_root,
+            output_path=repository_root / ".local" / "evaluation" / "other.json",
         )
 
 
@@ -358,16 +390,16 @@ def test_build_evaluation_bank_rejects_nested_repository_paths(tmp_path: Path) -
     public_directory, input_directory, _public_cases = build_synthetic_evaluation_bank(
         repository_root
     )
-    nested_repository = repository_root / ".local" / "evaluation" / "nested"
-    nested_repository.mkdir(parents=True)
+    nested_repository = repository_root / ".local" / "evaluation"
+    nested_repository.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", str(nested_repository)], check=True)
 
     with pytest.raises(ValueError, match="nested Git repository"):
         build_evaluation_bank(
             input_directory=input_directory,
-            output_path=nested_repository / "evaluation_bank.json",
             public_directory=public_directory,
             repository_root=repository_root,
+            output_path=nested_repository / "evaluation_bank.json",
         )
 
 
@@ -391,9 +423,9 @@ def test_build_evaluation_bank_rejects_preexisting_symlink_output_path(
     with pytest.raises(ValueError, match="unsafe|symlink"):
         build_evaluation_bank(
             input_directory=input_directory,
-            output_path=output_path,
             public_directory=public_directory,
             repository_root=repository_root,
+            output_path=output_path,
         )
 
     assert target_path.read_text(encoding="utf-8") == "victim\n"
@@ -433,12 +465,52 @@ def test_build_evaluation_bank_rejects_replacement_attempts(
     with pytest.raises(ValueError, match="unsafe|symlink"):
         build_evaluation_bank(
             input_directory=input_directory,
-            output_path=output_path,
             public_directory=public_directory,
             repository_root=repository_root,
+            output_path=output_path,
         )
 
     assert target_path.read_text(encoding="utf-8") == "victim\n"
+
+
+def test_build_script_uses_trusted_script_location_for_repo_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script_path = (
+        tmp_path / "authoritative" / "scripts" / "build_evaluation_bank.py"
+    )
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text("# fake script path\n", encoding="utf-8")
+    input_directory = script_path.parents[1] / ".local" / "evaluation" / "domains"
+    input_directory.mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir(parents=True)
+    captured: dict[str, Path] = {}
+
+    def fake_build_evaluation_bank(
+        *,
+        input_directory: Path,
+        public_directory: Path = Path("/unused"),
+        repository_root: Path,
+        output_path: Path,
+    ) -> None:
+        captured["input_directory"] = input_directory
+        captured["public_directory"] = public_directory
+        captured["repository_root"] = repository_root
+        captured["output_path"] = output_path
+
+    script_module = load_script_module()
+    monkeypatch.setattr(script_module, "__file__", str(script_path))
+    monkeypatch.setattr(script_module, "build_evaluation_bank", fake_build_evaluation_bank)
+    monkeypatch.chdir(tmp_path / "elsewhere")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["build_evaluation_bank.py", "--input", ".local/evaluation/domains"],
+    )
+
+    assert script_module.main() == 0
+    assert captured["repository_root"] == script_path.parents[1]
+    assert captured["output_path"] == script_path.parents[1] / ".local" / "evaluation" / "evaluation_bank.json"
 
 
 def test_question_review_doc_requires_two_human_reviews_for_semantic_truth() -> None:
@@ -459,6 +531,14 @@ def cast_reference(
     return cast(JsonDict, reference)
 
 
+def cast_rubric(
+    payloads: list[JsonDict], domain_index: int, case_index: int
+) -> JsonDict:
+    rubric = cast_case(payloads, domain_index, case_index)["rubric"]
+    assert isinstance(rubric, dict)
+    return cast(JsonDict, rubric)
+
+
 def cast_case(payloads: list[JsonDict], domain_index: int, case_index: int) -> JsonDict:
     cases = payloads[domain_index]["cases"]
     assert isinstance(cases, list)
@@ -466,3 +546,19 @@ def cast_case(payloads: list[JsonDict], domain_index: int, case_index: int) -> J
     case = typed_cases[case_index]
     assert isinstance(case, dict)
     return case
+
+
+def load_script_module():
+    script_path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "build_evaluation_bank.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "build_evaluation_bank_script", script_path
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

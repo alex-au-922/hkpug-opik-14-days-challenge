@@ -17,21 +17,25 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Directory containing per-domain evaluation bank JSON files.",
     )
-    parser.add_argument(
-        "--output",
-        dest="output_path",
-        required=True,
-        type=Path,
-        help="Canonical output path for the merged evaluation bank JSON.",
-    )
     return parser.parse_args()
+
+
+def _authoritative_repository_root() -> Path:
+    return Path(__file__).resolve().parents[1]
 
 
 def main() -> int:
     args = parse_args()
+    repository_root = _authoritative_repository_root()
+    input_directory = (
+        args.input_directory
+        if args.input_directory.is_absolute()
+        else repository_root / args.input_directory
+    )
     build_evaluation_bank(
-        input_directory=args.input_directory,
-        output_path=args.output_path,
+        input_directory=input_directory,
+        output_path=repository_root / ".local" / "evaluation" / "evaluation_bank.json",
+        repository_root=repository_root,
     )
     return 0
 

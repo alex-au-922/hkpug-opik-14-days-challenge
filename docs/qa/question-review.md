@@ -18,3 +18,7 @@ This review ledger is the human gate for evaluation-bank fairness. Validators pr
 | Case ID | Reviewer | Severity | Disposition | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | _TBD after private evaluation cases exist_ | _Unassigned_ | _N/A_ | _No content yet_ | Pending | This file intentionally records process requirements without reproducing private case text. |
+
+## Implementation Note
+
+The evaluation-bank validator now enforces the canonical private-bank output path under the authoritative repository root and requires each private case to use a context-file combination already published for the same domain. This note records code-level validation changes only; the semantic review rules above remain the human gate for private content.

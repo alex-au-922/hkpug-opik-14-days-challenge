@@ -21,6 +21,7 @@ from pydantic import (
 )
 
 from .dataset import PUBLIC_DIRECTORY, load_public_cases
+from .models import PublicCase
 
 
 DIFFICULTY_COUNTS = {"easy": 10, "standard": 30, "hard": 10}
@@ -225,7 +226,7 @@ def load_evaluation_bank(
 
 def build_evaluation_bank(
     input_directory: Path,
-    output_path: Path,
+    output_path: Path | None = None,
     public_directory: Path = PUBLIC_DIRECTORY,
     repository_root: Path | None = None,
 ) -> EvaluationBank:
@@ -262,6 +263,12 @@ def build_evaluation_bank(
         ],
     }
     bank = _parse_evaluation_bank(combined_payload, public_directory=public_directory)
+    if output_path is None:
+        if repository_root is None:
+            raise ValueError(
+                "Evaluation bank writes require an explicit repository root."
+            )
+        output_path = _canonical_output_path(repository_root.resolve())
     _validate_output_path(output_path=output_path, repository_root=repository_root)
     _write_evaluation_bank(output_path, bank)
     return bank
@@ -339,6 +346,7 @@ def _validate_evaluation_bank(bank: EvaluationBank, public_directory: Path) -> N
     public_cases = load_public_cases(public_directory)
     public_questions = {_normalize_text(case.question) for case in public_cases}
     public_domains = {case.domain for case in public_cases}
+    allowed_context_file_combinations = _allowed_context_file_combinations(public_cases)
 
     if len(bank.cases) != 50:
         raise ValueError("Evaluation bank must contain exactly 50 cases.")
@@ -380,6 +388,15 @@ def _validate_evaluation_bank(bank: EvaluationBank, public_directory: Path) -> N
         if case.difficulty not in allowed_difficulties:
             raise ValueError(
                 f"Evaluation case {case.case_id} uses an unknown difficulty."
+            )
+
+        if case.context_files not in allowed_context_file_combinations.get(
+            case.domain, frozenset()
+        ):
+            raise ValueError(
+                "Evaluation case "
+                f"{case.case_id} uses a context-file combination not published for "
+                f"domain {case.domain}."
             )
 
         question_key = _normalize_text(case.question)
@@ -476,26 +493,32 @@ def _normalize_text(value: str) -> str:
 def _validate_output_path(
     output_path: Path, repository_root: Path | None
 ) -> Path | None:
+    if repository_root is None:
+        raise ValueError("Evaluation bank writes require an explicit repository root.")
+
+    authoritative_root = repository_root.resolve()
+    canonical_output_path = _canonical_output_path(authoritative_root)
     absolute_output_path = _absolute_path(output_path)
-    repository_roots = _repository_roots(absolute_output_path)
+    if absolute_output_path != canonical_output_path:
+        raise ValueError(
+            "Evaluation bank output path must be the canonical "
+            ".local/evaluation/evaluation_bank.json path under the repository root."
+        )
 
-    discovered_root = next(iter(repository_roots), None)
-    if discovered_root is None:
-        return None
-
+    repository_roots = _repository_roots(canonical_output_path)
     if len(repository_roots) > 1:
         raise ValueError(
             "Refusing to write evaluation bank output through a nested Git repository path."
         )
-
-    if repository_root is not None and repository_root.resolve() != discovered_root:
+    if not repository_roots or repository_roots[0] != authoritative_root:
         raise ValueError(
-            "Caller-supplied repository_root does not match the authoritative repository root."
+            "Unable to validate evaluation bank output path against the repository root."
         )
 
-    relative_output_path = absolute_output_path.relative_to(discovered_root)
-    _assert_output_path_is_ignored(discovered_root, relative_output_path)
-    return discovered_root
+    _assert_output_path_is_ignored(
+        authoritative_root, canonical_output_path.relative_to(authoritative_root)
+    )
+    return authoritative_root
 
 
 def _write_evaluation_bank(path: Path, bank: EvaluationBank) -> None:
@@ -592,6 +615,10 @@ def _absolute_path(path: Path) -> Path:
     return path if path.is_absolute() else Path.cwd() / path
 
 
+def _canonical_output_path(repository_root: Path) -> Path:
+    return repository_root / ".local" / "evaluation" / "evaluation_bank.json"
+
+
 def _path_ancestors(path: Path) -> tuple[Path, ...]:
     absolute_path = _absolute_path(path)
     return (absolute_path.parent, *absolute_path.parent.parents)
@@ -614,6 +641,17 @@ def _repository_roots(path: Path) -> tuple[Path, ...]:
             roots.append(root)
             seen.add(root)
     return tuple(roots)
+
+
+def _allowed_context_file_combinations(
+    public_cases: Iterable[PublicCase],
+) -> dict[str, frozenset[tuple[str, str]]]:
+    combinations: dict[str, set[tuple[str, str]]] = {}
+    for case in public_cases:
+        combinations.setdefault(case.domain, set()).add(case.context_files)
+    return {
+        domain: frozenset(contexts) for domain, contexts in combinations.items()
+    }
 
 
 def _assert_output_path_is_ignored(
