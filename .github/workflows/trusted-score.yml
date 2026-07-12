@@ -300,7 +300,7 @@ jobs:
           SCORE=$(jq -r .overall_score /tmp/private/scoring/summary.json)
           ATTEMPT=$(jq -r .attempt /tmp/private/reservation.json)
           gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
-            "Scored attempt ${ATTEMPT}/8: **${SCORE}/100**. [Download the team-encrypted discovery feedback from this workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${{ github.event.workflow_run.id }}). Holdout feedback remains aggregate-only."
+            "Scored attempt ${ATTEMPT}/8: **${SCORE}/100**. [Download the team-encrypted discovery feedback from this workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Holdout feedback remains aggregate-only."
 
       - name: Remove decrypted material
         if: always()

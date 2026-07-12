@@ -417,6 +417,14 @@ def test_trusted_feedback_is_encrypted_and_holdout_is_aggregate_only() -> None:
         assert forbidden not in upload_step
 
 
+def test_score_comment_links_to_the_current_scoring_run_artifact() -> None:
+    text = load_workflow(TRUSTED_WORKFLOW)
+    comment_step = named_step(text, r"comment.*score.*artifact")
+
+    assert "actions/runs/${GITHUB_RUN_ID}" in comment_step
+    assert "github.event.workflow_run.id" not in comment_step
+
+
 def test_leaderboard_update_is_serialized_append_only_and_non_force() -> None:
     text = load_workflow(TRUSTED_WORKFLOW)
     update_step = named_step(text, r"update.*leaderboard")
