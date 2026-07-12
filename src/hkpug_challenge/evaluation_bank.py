@@ -649,9 +649,7 @@ def _allowed_context_file_combinations(
     combinations: dict[str, set[tuple[str, str]]] = {}
     for case in public_cases:
         combinations.setdefault(case.domain, set()).add(case.context_files)
-    return {
-        domain: frozenset(contexts) for domain, contexts in combinations.items()
-    }
+    return {domain: frozenset(contexts) for domain, contexts in combinations.items()}
 
 
 def _assert_output_path_is_ignored(

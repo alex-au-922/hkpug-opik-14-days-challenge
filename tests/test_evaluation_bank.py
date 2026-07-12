@@ -476,9 +476,7 @@ def test_build_evaluation_bank_rejects_replacement_attempts(
 def test_build_script_uses_trusted_script_location_for_repo_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    script_path = (
-        tmp_path / "authoritative" / "scripts" / "build_evaluation_bank.py"
-    )
+    script_path = tmp_path / "authoritative" / "scripts" / "build_evaluation_bank.py"
     script_path.parent.mkdir(parents=True)
     script_path.write_text("# fake script path\n", encoding="utf-8")
     input_directory = script_path.parents[1] / ".local" / "evaluation" / "domains"
@@ -500,7 +498,9 @@ def test_build_script_uses_trusted_script_location_for_repo_root(
 
     script_module = load_script_module()
     monkeypatch.setattr(script_module, "__file__", str(script_path))
-    monkeypatch.setattr(script_module, "build_evaluation_bank", fake_build_evaluation_bank)
+    monkeypatch.setattr(
+        script_module, "build_evaluation_bank", fake_build_evaluation_bank
+    )
     monkeypatch.chdir(tmp_path / "elsewhere")
     monkeypatch.setattr(
         sys,
@@ -510,7 +510,10 @@ def test_build_script_uses_trusted_script_location_for_repo_root(
 
     assert script_module.main() == 0
     assert captured["repository_root"] == script_path.parents[1]
-    assert captured["output_path"] == script_path.parents[1] / ".local" / "evaluation" / "evaluation_bank.json"
+    assert (
+        captured["output_path"]
+        == script_path.parents[1] / ".local" / "evaluation" / "evaluation_bank.json"
+    )
 
 
 def test_question_review_doc_requires_two_human_reviews_for_semantic_truth() -> None:
@@ -550,9 +553,7 @@ def cast_case(payloads: list[JsonDict], domain_index: int, case_index: int) -> J
 
 def load_script_module():
     script_path = (
-        Path(__file__).resolve().parents[1]
-        / "scripts"
-        / "build_evaluation_bank.py"
+        Path(__file__).resolve().parents[1] / "scripts" / "build_evaluation_bank.py"
     )
     spec = importlib.util.spec_from_file_location(
         "build_evaluation_bank_script", script_path
