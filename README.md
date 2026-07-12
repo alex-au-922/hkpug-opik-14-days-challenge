@@ -5,7 +5,7 @@ attempt returns encrypted feedback that your team can inspect in Opik before
 revising the next prompt.
 
 [First submission tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/start/) |
-[Inspect feedback in Opik](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/opik/) |
+[Opik tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/tutorial/) |
 [Live leaderboard](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/leaderboard/)
 
 ## Rules
@@ -58,9 +58,9 @@ git push
 
 ## Review feedback
 
-After scoring, download `discovery-feedback.cms` from the workflow link in the
-pull request comment. Decrypt it and load the traces into a running local Opik
-instance:
+After scoring, download `submission-feedback.cms` from the pull request
+comment's artifact link. Decrypt it and load the traces into a running local
+Opik instance:
 
 ```sh
 hkpug-opik-helper decrypt \
@@ -69,6 +69,6 @@ hkpug-opik-helper decrypt \
 hkpug-opik-helper load
 ```
 
-Follow the [Opik feedback tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/opik/)
+Follow the [Opik tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/tutorial/)
 for setup and review guidance. The practice cases are in [`public`](public), and
 the supplied prompts are in [`starter`](starter).
