@@ -312,3 +312,28 @@ pyright: 0 errors
 scorer/team/CA certificate verification: passed
 tracked secret scan: no matches
 ```
+
+## Descriptor-Bound TOCTOU Closure
+
+Date: 2026-07-12
+
+- Replaced `lstat` followed by a pathname read with one descriptor-bound read:
+  `O_RDONLY | O_NOFOLLOW`, `fstat`, regular-file validation, and a bounded
+  `limit + 1` read from the same descriptor.
+- Verification reads the ciphertext once and passes the same immutable bytes to
+  ASN.1 inspection and OpenSSL decryption.
+- OpenSSL receives private temporary snapshots made only from the already-read
+  ciphertext, scorer certificate, and scorer private-key bytes.
+- The verifier fails with an actionable Linux/macOS/WSL requirement when safe
+  no-follow descriptor semantics are unavailable.
+
+Red regressions initially failed for path replacement, post-check file growth,
+and ciphertext swapping between inspection and decryption. Green results:
+
+```text
+focused TOCTOU regressions: 3 passed
+tests/test_submission.py: 39 passed
+full suite before concurrent evaluation-bank edits: 65 passed
+owned-file ruff and pyright: passed
+certificate and tracked-secret scans: passed
+```
