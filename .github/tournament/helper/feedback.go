@@ -37,11 +37,14 @@ func DecryptFeedback(ciphertext []byte, teamCertificate *x509.Certificate, teamP
 	if teamCertificate == nil || teamPrivateKey == nil {
 		return nil, errors.New("team certificate and private key are required")
 	}
+	if err := validateCMSEnvelope(ciphertext, teamCertificate, "feedback artifact"); err != nil {
+		return nil, err
+	}
 	envelope, err := pkcs7.Parse(ciphertext)
 	if err != nil {
 		return nil, fmt.Errorf("feedback artifact is not CMS DER: %w", err)
 	}
-	payload, err := envelope.Decrypt(teamCertificate, teamPrivateKey)
+	payload, err := decryptCMSEnvelope(envelope, teamCertificate, teamPrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt feedback artifact: %w", err)
 	}
@@ -74,6 +77,13 @@ func ExtractTarGzip(payload []byte, outputDirectory string) ([]string, error) {
 			_ = gzipReader.Close()
 			return nil, err
 		}
+		if name == "" {
+			if header.Typeflag != tar.TypeDir {
+				_ = gzipReader.Close()
+				return nil, errors.New("feedback archive contains an unsafe path")
+			}
+			continue
+		}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			files = append(files, extractedFile{name: name, directory: true})
@@ -96,6 +106,9 @@ func ExtractTarGzip(payload []byte, outputDirectory string) ([]string, error) {
 	}
 	if err := gzipReader.Close(); err != nil {
 		return nil, fmt.Errorf("finish feedback gzip: %w", err)
+	}
+	if err := validateExtractedFiles(files); err != nil {
+		return nil, err
 	}
 
 	if err := os.MkdirAll(outputDirectory, 0o700); err != nil {
@@ -145,12 +158,56 @@ func ExtractTarGzip(payload []byte, outputDirectory string) ([]string, error) {
 }
 
 func cleanArchivePath(name string) (string, error) {
-	if name == "" || strings.Contains(name, "\\") || path.IsAbs(name) {
+	if name == "" || strings.ContainsAny(name, "\x00\\") {
+		return "", errors.New("feedback archive contains an unsafe path")
+	}
+	for strings.HasPrefix(name, "./") {
+		name = strings.TrimPrefix(name, "./")
+	}
+	if name == "" {
+		return "", nil
+	}
+	if path.IsAbs(name) {
 		return "", errors.New("feedback archive contains an unsafe path")
 	}
 	cleaned := path.Clean(name)
 	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") || cleaned != strings.TrimSuffix(name, "/") {
 		return "", errors.New("feedback archive contains an unsafe path")
 	}
+	for _, component := range strings.Split(cleaned, "/") {
+		if !portableArchiveComponent(component) {
+			return "", errors.New("feedback archive contains a non-portable path")
+		}
+	}
 	return cleaned, nil
+}
+
+func portableArchiveComponent(component string) bool {
+	if strings.Contains(component, ":") || strings.HasSuffix(component, ".") || strings.HasSuffix(component, " ") {
+		return false
+	}
+	base := strings.ToUpper(strings.SplitN(component, ".", 2)[0])
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" {
+		return false
+	}
+	return !(len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9')
+}
+
+func validateExtractedFiles(files []extractedFile) error {
+	entries := make(map[string]extractedFile, len(files))
+	for _, file := range files {
+		key := strings.ToLower(file.name)
+		if _, exists := entries[key]; exists {
+			return errors.New("feedback archive contains duplicate or case-colliding paths")
+		}
+		entries[key] = file
+	}
+	for key := range entries {
+		for parent := path.Dir(key); parent != "."; parent = path.Dir(parent) {
+			if entry, exists := entries[parent]; exists && !entry.directory {
+				return errors.New("feedback archive contains conflicting file paths")
+			}
+		}
+	}
+	return nil
 }

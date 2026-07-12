@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Local Opik feedback guide for the HKPUG Opik 14-Day Challenge.">
+    <title>Opik Feedback | HKPUG Opik Challenge</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="../styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to Opik feedback steps</a>
+
+    <header class="site-header participant-header">
+      <div class="header-inner">
+        <a class="brand" href="../" aria-label="HKPUG Opik Challenge overview">
+          <span class="brand-mark" aria-hidden="true">14</span>
+          <span>
+            <strong>HKPUG Opik Challenge</strong>
+            <small>Participant guide</small>
+          </span>
+        </a>
+        <nav class="site-nav" aria-label="Challenge pages">
+          <a href="../">Overview</a>
+          <a href="../start/">First submission</a>
+          <a href="./" aria-current="page">Opik feedback</a>
+          <a href="../leaderboard/">Leaderboard</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content" class="page-shell tutorial-shell" tabindex="-1">
+      <section class="tutorial-hero" aria-labelledby="opik-title">
+        <div>
+          <h1 id="opik-title">Inspect feedback in Opik</h1>
+          <p class="tutorial-lede">Decrypt the private artifact from your scored run, load its traces into a local workspace, and use the evidence to plan your next prompt change.</p>
+        </div>
+        <ol class="tutorial-progress" aria-label="Feedback stages">
+          <li><span>1</span>Start Opik</li>
+          <li><span>2</span>Decrypt feedback</li>
+          <li><span>3</span>Load and review</li>
+        </ol>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="start-opik-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">01</span>
+            <h2 id="start-opik-title">Start Opik locally</h2>
+          </div>
+          <p>Install Git, Docker, and Docker Compose first. Then use Opik's public local-deployment scripts from the root of its repository.</p>
+        </div>
+
+        <div class="platform-list two-column-list">
+          <article>
+            <h3>macOS or Linux</h3>
+            <pre><code>git clone https://github.com/comet-ml/opik.git
+cd opik
+./opik.sh</code></pre>
+          </article>
+          <article>
+            <h3>Windows PowerShell</h3>
+            <pre><code>git clone https://github.com/comet-ml/opik.git
+cd opik
+powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
+          </article>
+        </div>
+        <p class="command-note">When the services are ready, open <a href="http://localhost:5173"><code>http://localhost:5173</code></a>. See the <a href="https://www.comet.com/docs/opik/self-host/local_deployment">Opik local deployment guide</a> for startup troubleshooting.</p>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="decrypt-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">02</span>
+            <h2 id="decrypt-title">Decrypt the feedback artifact</h2>
+          </div>
+          <p>Download <code>discovery-feedback.cms</code> from the scored run and keep it beside an empty destination folder on your machine.</p>
+        </div>
+        <div class="command-step">
+          <h3>Open the private bundle</h3>
+          <pre><code>hkpug-opik-helper decrypt --artifact discovery-feedback.cms --private-key path/to/private-key.pem --team-cert path/to/team-cert.pem --out feedback</code></pre>
+          <p>The helper verifies the team credentials and writes the decrypted feedback files into <code>feedback</code>.</p>
+        </div>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="load-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">03</span>
+            <h2 id="load-title">Load the traces</h2>
+          </div>
+          <p>Keep Opik running while the helper imports the decrypted bundle into the local default workspace.</p>
+        </div>
+        <div class="command-step">
+          <h3>Import into local Opik</h3>
+          <pre><code>hkpug-opik-helper load --feedback feedback --opik-url http://localhost:5173/api --workspace default</code></pre>
+          <p>The command prints the imported project name and item counts. Re-loading the same bundle is safe.</p>
+        </div>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="review-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">04</span>
+            <h2 id="review-title">Review before changing the prompt</h2>
+          </div>
+          <p>Open the imported project and use the Traces view to compare behavior across cases.</p>
+        </div>
+        <ol class="plain-checklist review-checklist">
+          <li>Start with the lowest-scoring traces and read the evaluator feedback.</li>
+          <li>Compare the model input, output, latency, and scored criteria.</li>
+          <li>Look for one repeated weakness that a prompt change can address.</li>
+          <li>Change one idea at a time, then pack and inspect the next submission locally.</li>
+        </ol>
+      </section>
+
+      <section class="next-route" aria-labelledby="next-title">
+        <div>
+          <h2 id="next-title">Ready for another run?</h2>
+          <p>Return to the submission guide, package the revised prompt, and check the standings after scoring.</p>
+        </div>
+        <div class="next-route-actions">
+          <a class="button button-primary" href="../start/">Prepare the next submission</a>
+          <a class="button" href="../leaderboard/">View leaderboard</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        <a href="../">Challenge overview</a>
+        <span aria-hidden="true"> / </span>
+        <a href="../start/">First submission</a>
+        <span aria-hidden="true"> / </span>
+        <a href="../leaderboard/">Leaderboard</a>
+      </p>
+    </footer>
+  </body>
+</html>

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	helper "github.com/hkpug/hkpug-opik-helper"
 )
 
 func TestParticipantCanDoctorPackAndInspect(t *testing.T) {
@@ -98,6 +100,42 @@ func TestPackRejectsAGroupReadablePrivateKey(t *testing.T) {
 	}
 }
 
+func TestInspectRejectsCiphertextForAnotherOrganizer(t *testing.T) {
+	directory := t.TempDir()
+	privateKeyPath, certificatePath := writeTeamIdentity(t, directory, "team-07")
+	_, wrongScorerCertificatePath := writeTeamIdentity(t, t.TempDir(), "wrong-scorer")
+	teamKey, err := loadPrivateKey(privateKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongScorerCertificate, err := loadCertificate(wrongScorerCertificatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	if _, err := helper.Pack(helper.PackOptions{
+		TeamID:            "team-07",
+		Prompt:            []byte("valid prompt"),
+		TeamPrivateKey:    teamKey,
+		ScorerCertificate: wrongScorerCertificate,
+		CreatedAt:         time.Now().UTC(),
+		Output:            &archive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(directory, "wrong-recipient.zip")
+	if err := os.WriteFile(archivePath, archive.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"inspect", "--submission", archivePath, "--team-cert", certificatePath}, &stdout, &stderr)
+	if code == 0 || !strings.Contains(strings.ToLower(stderr.String()), "recipient") {
+		t.Fatalf("inspect returned %d with stderr %q", code, stderr.String())
+	}
+}
+
 func TestHelpListsTheLocalOpikLoadCommand(t *testing.T) {
 	t.Parallel()
 
@@ -119,12 +157,13 @@ func writeTeamIdentity(t *testing.T, directory, teamID string) (string, string) 
 	}
 	now := time.Now().UTC()
 	template := &x509.Certificate{
-		SerialNumber: big.NewInt(7),
-		Subject:      pkix.Name{CommonName: teamID},
-		Issuer:       pkix.Name{CommonName: "Test CA"},
-		NotBefore:    now.Add(-time.Hour),
-		NotAfter:     now.Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		SerialNumber:          big.NewInt(7),
+		Subject:               pkix.Name{CommonName: teamID},
+		Issuer:                pkix.Name{CommonName: "Test CA"},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		BasicConstraintsValid: true,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {

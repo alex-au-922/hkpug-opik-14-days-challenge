@@ -73,6 +73,9 @@ func Doctor(teamID string, privateKey *rsa.PrivateKey, certificate *x509.Certifi
 	if certificate.Subject.CommonName != teamID {
 		return errors.New("team certificate common name does not match the team ID")
 	}
+	if !certificate.BasicConstraintsValid || certificate.IsCA {
+		return errors.New("team certificate must be a leaf certificate with basic constraints")
+	}
 	if now.Before(certificate.NotBefore) || now.After(certificate.NotAfter) {
 		return errors.New("team certificate is not currently valid")
 	}

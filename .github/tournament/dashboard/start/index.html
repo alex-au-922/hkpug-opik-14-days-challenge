@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Cross-platform first-submission guide for the HKPUG Opik 14-Day Challenge.">
+    <title>First Submission | HKPUG Opik Challenge</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="../styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to first-submission steps</a>
+
+    <header class="site-header participant-header">
+      <div class="header-inner">
+        <a class="brand" href="../" aria-label="HKPUG Opik Challenge overview">
+          <span class="brand-mark" aria-hidden="true">14</span>
+          <span>
+            <strong>HKPUG Opik Challenge</strong>
+            <small>Participant guide</small>
+          </span>
+        </a>
+        <nav class="site-nav" aria-label="Challenge pages">
+          <a href="../">Overview</a>
+          <a href="./" aria-current="page">First submission</a>
+          <a href="../opik/">Opik feedback</a>
+          <a href="../leaderboard/">Leaderboard</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content" class="page-shell tutorial-shell" tabindex="-1">
+      <section class="tutorial-hero" aria-labelledby="tutorial-title">
+        <div>
+          <h1 id="tutorial-title">First submission</h1>
+          <p class="tutorial-lede">
+            Turn one plaintext prompt into the single encrypted file accepted by the challenge. The same helper and commands work on macOS, Linux, and Windows.
+          </p>
+        </div>
+        <ol class="tutorial-progress" aria-label="Submission stages">
+          <li><span>1</span>Check your setup</li>
+          <li><span>2</span>Pack and inspect</li>
+          <li><span>3</span>Open a pull request</li>
+        </ol>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="download-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">01</span>
+            <h2 id="download-title">Install the participant helper</h2>
+          </div>
+          <p>Download the archive for your operating system and processor from the latest release, extract it, and put the executable in a folder on your <code>PATH</code>.</p>
+        </div>
+
+        <p class="release-action">
+          <a class="button button-primary" href="https://github.com/alex-au-922/hkpug-opik-14-days-challenge/releases/latest">Download the latest helper release</a>
+        </p>
+
+        <div class="platform-list">
+          <article>
+            <h3>macOS</h3>
+            <p>Choose the <code>darwin_arm64</code> archive for Apple silicon or <code>darwin_amd64</code> for an Intel Mac. Extract <code>hkpug-opik-helper</code>.</p>
+          </article>
+          <article>
+            <h3>Linux</h3>
+            <p>Choose <code>linux_amd64</code> for most PCs or <code>linux_arm64</code> for an ARM machine. Extract <code>hkpug-opik-helper</code>.</p>
+          </article>
+          <article>
+            <h3>Windows</h3>
+            <p>Choose the matching Windows ZIP, extract <code>hkpug-opik-helper.exe</code>, and add its folder to your user <code>PATH</code>.</p>
+          </article>
+        </div>
+        <p class="command-note">Confirm the installation from Terminal or PowerShell with <code>hkpug-opik-helper version</code>.</p>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="prepare-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">02</span>
+            <h2 id="prepare-title">Check your team setup</h2>
+          </div>
+          <p>Keep your team ID, private key, and certificate outside the repository. Run this check from the challenge repository before packaging a prompt.</p>
+        </div>
+
+        <div class="command-step">
+          <h3>Run the readiness check</h3>
+          <pre><code>hkpug-opik-helper doctor --team-id your-team-id --private-key path/to/private-key.pem --team-cert path/to/team-cert.pem</code></pre>
+          <p>A ready message confirms that the team ID and credential files belong together. Fix any reported path or permission issue before continuing.</p>
+        </div>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="pack-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">03</span>
+            <h2 id="pack-title">Pack one prompt</h2>
+          </div>
+          <p>Write your prompt in <code>submission/prompt.txt</code>. The helper reads that local file and creates the encrypted submission archive.</p>
+        </div>
+
+        <div class="command-step">
+          <h3>Create the archive</h3>
+          <pre><code>hkpug-opik-helper pack --team-id your-team-id --private-key path/to/private-key.pem</code></pre>
+          <p>The default output is <code>submission/submission.zip</code>. Re-running the command safely replaces your local archive.</p>
+        </div>
+
+        <div class="command-step">
+          <h3>Inspect it before upload</h3>
+          <pre><code>hkpug-opik-helper inspect --submission submission/submission.zip --team-cert path/to/team-cert.pem</code></pre>
+          <p>Check that the displayed team ID and prompt digest are present. Preparing, packing, and inspecting locally does not use an attempt.</p>
+        </div>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="submit-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">04</span>
+            <h2 id="submit-title">Open the pull request</h2>
+          </div>
+          <p>The pull request must contain only the encrypted ZIP. Review the staged path before committing.</p>
+        </div>
+
+        <div class="command-step">
+          <h3>Stage and push</h3>
+          <pre><code>git status --short
+git add submission/submission.zip
+git commit -m "submission: add scored attempt"
+git push</code></pre>
+        </div>
+
+        <ol class="plain-checklist">
+          <li>Open a pull request into the repository's <code>main</code> branch.</li>
+          <li>Confirm the changed-files view lists only <code>submission/submission.zip</code>.</li>
+          <li>Wait for validation and scoring. A successful score counts toward your attempt limit.</li>
+          <li>Use the pull-request comment to find your score and encrypted feedback download.</li>
+        </ol>
+
+        <aside class="info-note" aria-label="Attempt reminder">
+          <strong>Local checks are free.</strong>
+          <p>You can revise, pack, and inspect as often as needed before opening or updating the scored pull request.</p>
+        </aside>
+      </section>
+
+      <section class="next-route" aria-labelledby="next-title">
+        <div>
+          <h2 id="next-title">Feedback ready?</h2>
+          <p>Keep the encrypted artifact and your team credential files together on your machine for the next step.</p>
+        </div>
+        <a class="button button-primary" href="../opik/">Inspect feedback in Opik</a>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        <a href="../">Challenge overview</a>
+        <span aria-hidden="true"> / </span>
+        <a href="../opik/">Opik feedback</a>
+        <span aria-hidden="true"> / </span>
+        <a href="../leaderboard/">Leaderboard</a>
+      </p>
+    </footer>
+  </body>
+</html>

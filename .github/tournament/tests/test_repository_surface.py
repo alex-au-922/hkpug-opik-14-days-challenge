@@ -36,11 +36,7 @@ def test_embedded_organizer_certificate_matches_tracked_public_certificate() -> 
         / "scorer_cert.pem"
     )
     tracked = (
-        REPOSITORY_ROOT
-        / ".github"
-        / "tournament"
-        / "public_keys"
-        / "scorer_cert.pem"
+        REPOSITORY_ROOT / ".github" / "tournament" / "public_keys" / "scorer_cert.pem"
     )
 
     assert embedded.read_bytes() == tracked.read_bytes()

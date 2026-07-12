@@ -34,8 +34,6 @@ from hkpug_challenge.submission_archive import (
 
 
 TOURNAMENT_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = Path(__file__).resolve().parents[3]
-ENCRYPT_SCRIPT = REPO_ROOT / "submission" / "encrypt_prompt.sh"
 EXPECTED_PROMPT_PATH = "submission/prompt.txt.cms"
 MAX_PROMPT_BYTES = 8192
 
@@ -411,16 +409,38 @@ def create_manual_submission(
 def create_submission(workspace: Path, prompt_text: str) -> SubmissionPaths:
     paths = create_certificate_material(workspace)
     submission_paths = create_submission_paths(workspace, paths)
+    submission_paths["submission_directory"].mkdir(parents=True, exist_ok=True)
     submission_paths["prompt_path"].write_text(prompt_text, encoding="utf-8")
-
-    env = os.environ | {
-        "TEAM_ID": "organizer-test",
-        "PROMPT_PATH": str(submission_paths["prompt_path"]),
-        "SCORER_CERT_PATH": str(paths["scorer_cert_path"]),
-        "TEAM_PRIVATE_KEY_PATH": str(paths["team_key_path"]),
-        "SUBMISSION_DIR": str(submission_paths["submission_directory"]),
+    manifest = {
+        "schema_version": 1,
+        "team_id": "organizer-test",
+        "prompt_path": EXPECTED_PROMPT_PATH,
+        "prompt_sha256": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+        "created_at": "2026-07-12T00:00:00Z",
     }
-    run_checked([str(ENCRYPT_SCRIPT)], cwd=workspace, env=env)
+    submission_paths["manifest_path"].write_bytes(canonical_manifest_bytes(manifest))
+    sign_manifest(
+        submission_paths["manifest_path"],
+        paths["team_key_path"],
+        submission_paths["signature_path"],
+    )
+    run_checked(
+        [
+            "openssl",
+            "cms",
+            "-encrypt",
+            "-binary",
+            "-aes-256-cbc",
+            "-in",
+            str(submission_paths["prompt_path"]),
+            "-outform",
+            "DER",
+            "-out",
+            str(submission_paths["ciphertext_path"]),
+            str(paths["scorer_cert_path"]),
+        ],
+        cwd=workspace,
+    )
     return submission_paths
 
 
@@ -808,7 +828,7 @@ def mutate_prompt_path(paths: SubmissionPaths) -> None:
     _rewrite_and_resign_manifest(paths, prompt_path="submission/renamed.cms")
 
 
-def test_encrypt_prompt_script_produces_a_verifiable_submission(tmp_path: Path) -> None:
+def test_submission_envelope_is_verifiable(tmp_path: Path) -> None:
     paths = create_submission(tmp_path, "Support policy in UTF-8: 用最少字數回答。")
 
     result = verify_submission(
@@ -1321,31 +1341,19 @@ def test_verify_cli_reports_validation_errors_without_traceback(
     assert "Traceback" not in result.stderr
 
 
-def test_encrypt_prompt_script_rejects_group_readable_team_private_key(
+def test_sign_manifest_cli_rejects_group_readable_team_private_key(
     tmp_path: Path,
 ) -> None:
     if os.name == "nt":
         pytest.skip("POSIX mode bits are not enforced on Windows.")
 
-    paths = create_certificate_material(tmp_path)
-    prompt_path = tmp_path / "prompt.txt"
-    prompt_path.write_text("Minimal prompt.", encoding="utf-8")
+    paths = create_submission(tmp_path, "Minimal prompt.")
     os.chmod(paths["team_key_path"], 0o644)
 
-    result = subprocess.run(
-        [str(ENCRYPT_SCRIPT)],
-        cwd=tmp_path,
-        env=os.environ
-        | {
-            "TEAM_ID": "organizer-test",
-            "PROMPT_PATH": str(prompt_path),
-            "SCORER_CERT_PATH": str(paths["scorer_cert_path"]),
-            "TEAM_PRIVATE_KEY_PATH": str(paths["team_key_path"]),
-            "SUBMISSION_DIR": str(tmp_path / "submission"),
-        },
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_sign_manifest_cli(
+        manifest_path=paths["manifest_path"],
+        private_key_path=paths["team_key_path"],
+        signature_path=tmp_path / "group-readable.sig",
     )
 
     assert result.returncode != 0
@@ -1400,34 +1408,6 @@ def test_verify_submission_rejects_group_readable_scorer_private_key(
 
     with pytest.raises(ValueError, match="private key"):
         verify_paths(paths)
-
-
-def test_encrypt_prompt_script_rejects_prompts_larger_than_8192_bytes(
-    tmp_path: Path,
-) -> None:
-    paths = create_certificate_material(tmp_path)
-    prompt_path = tmp_path / "prompt.txt"
-    prompt_path.write_text("a" * (MAX_PROMPT_BYTES + 1), encoding="utf-8")
-
-    result = subprocess.run(
-        [str(ENCRYPT_SCRIPT)],
-        cwd=tmp_path,
-        env=os.environ
-        | {
-            "TEAM_ID": "organizer-test",
-            "PROMPT_PATH": str(prompt_path),
-            "SCORER_CERT_PATH": str(paths["scorer_cert_path"]),
-            "TEAM_PRIVATE_KEY_PATH": str(paths["team_key_path"]),
-            "SUBMISSION_DIR": str(tmp_path / "submission"),
-        },
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert "8192 bytes" in result.stderr
-    assert "Traceback" not in result.stderr
 
 
 def test_submission_archive_validates_and_decrypts_existing_envelope(
