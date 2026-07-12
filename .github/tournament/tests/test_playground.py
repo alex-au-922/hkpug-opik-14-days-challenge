@@ -4,6 +4,8 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
+import pytest
+
 from hkpug_challenge.dataset import load_public_cases
 from hkpug_challenge.fireworks import Completion, FireworksClient
 from hkpug_challenge.models import Message
@@ -83,6 +85,65 @@ def test_fireworks_client_forces_non_reasoning_deepseek_requests() -> None:
         "reasoning_effort": "none",
         "response_format": response_format,
     }
+
+
+def test_fireworks_client_retries_a_transient_timeout() -> None:
+    transport_calls = 0
+    delays: list[float] = []
+    retries: list[tuple[int, int]] = []
+
+    def flaky_transport(
+        _url: str,
+        _headers: dict[str, str],
+        _payload: dict[str, object],
+        _timeout: float,
+    ) -> dict[str, object]:
+        nonlocal transport_calls
+        transport_calls += 1
+        if transport_calls == 1:
+            raise TimeoutError("read timed out")
+        return {
+            "choices": [{"message": {"content": '{"ok":true}'}}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 4},
+        }
+
+    client = FireworksClient(
+        api_key="test-key",
+        transport=flaky_transport,
+        retry_budget=2,
+        sleep=delays.append,
+        on_retry=lambda current, total: retries.append((current, total)),
+    )
+
+    result = client.complete(
+        ({"role": "user", "content": "Return JSON."},), max_tokens=77
+    )
+
+    assert result.content == '{"ok":true}'
+    assert transport_calls == 2
+    assert delays == [1.0]
+    assert retries == [(1, 2)]
+
+
+def test_fireworks_client_does_not_retry_a_non_transient_failure() -> None:
+    transport_calls = 0
+
+    def rejected_transport(
+        _url: str,
+        _headers: dict[str, str],
+        _payload: dict[str, object],
+        _timeout: float,
+    ) -> dict[str, object]:
+        nonlocal transport_calls
+        transport_calls += 1
+        raise RuntimeError("Fireworks returned HTTP 400")
+
+    client = FireworksClient(api_key="test-key", transport=rejected_transport)
+
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        client.complete(({"role": "user", "content": "Return JSON."},), max_tokens=77)
+
+    assert transport_calls == 1
 
 
 def test_playground_run_reveals_discovery_but_only_aggregates_holdout() -> None:

@@ -62,6 +62,7 @@ def main() -> int:
             client=FireworksClient(
                 api_key,
                 model=os.environ.get("FIREWORKS_MODEL", FIREWORKS_MODEL),
+                on_retry=_log_retry,
             ),
             max_calls=args.max_calls,
             on_case_start=_log_progress,
@@ -116,6 +117,14 @@ def _write_private_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _log_progress(current: int, total: int) -> None:
     print(f"Scoring case {current}/{total}.", file=sys.stderr, flush=True)
+
+
+def _log_retry(current: int, total: int) -> None:
+    print(
+        f"Fireworks request was temporarily unavailable; retrying {current}/{total}.",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from time import sleep as sleep_for
 from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -14,6 +15,7 @@ FIREWORKS_CHAT_URL = "https://api.fireworks.ai/inference/v1/chat/completions"
 FIREWORKS_MODEL = "accounts/fireworks/models/deepseek-v4-flash"
 JsonObject = dict[str, object]
 Transport = Callable[[str, dict[str, str], JsonObject, float], JsonObject]
+RetryCallback = Callable[[int, int], None]
 JUDGE_RESPONSE_FORMAT: JsonObject = {
     "type": "json_schema",
     "json_schema": {
@@ -68,6 +70,10 @@ class CompletionClient(Protocol):
     ) -> Completion: ...
 
 
+class TransientFireworksError(RuntimeError):
+    pass
+
+
 class FireworksClient:
     def __init__(
         self,
@@ -76,13 +82,22 @@ class FireworksClient:
         model: str = FIREWORKS_MODEL,
         timeout: float = 90,
         transport: Transport | None = None,
+        retry_budget: int = 2,
+        sleep: Callable[[float], None] = sleep_for,
+        on_retry: RetryCallback | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("FIREWORKS_API_KEY must not be empty.")
+        if retry_budget < 0:
+            raise ValueError("Fireworks retry budget must not be negative.")
         self._api_key = api_key
         self._model = model
         self._timeout = timeout
         self._transport = transport or _post_json
+        self._retry_budget = retry_budget
+        self._remaining_retries = retry_budget
+        self._sleep = sleep
+        self._on_retry = on_retry
 
     def complete(
         self,
@@ -102,16 +117,28 @@ class FireworksClient:
         }
         if response_format is not None:
             payload["response_format"] = response_format
-        response = self._transport(
-            FIREWORKS_CHAT_URL,
-            {
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            payload,
-            self._timeout,
-        )
-        return _parse_completion(response)
+        while True:
+            try:
+                response = self._transport(
+                    FIREWORKS_CHAT_URL,
+                    {
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    payload,
+                    self._timeout,
+                )
+                return _parse_completion(response)
+            except (TimeoutError, TransientFireworksError) as exc:
+                if self._remaining_retries == 0:
+                    raise RuntimeError(
+                        "Fireworks request exhausted the transient retry budget."
+                    ) from exc
+                retry = self._retry_budget - self._remaining_retries + 1
+                self._remaining_retries -= 1
+                if self._on_retry is not None:
+                    self._on_retry(retry, self._retry_budget)
+                self._sleep(float(2 ** (retry - 1)))
 
 
 def _post_json(
@@ -128,9 +155,16 @@ def _post_json(
             response_bytes = response.read()
     except HTTPError as exc:
         details = exc.read(2048).decode("utf-8", errors="replace")
-        raise RuntimeError(f"Fireworks returned HTTP {exc.code}: {details}") from exc
+        error_type = (
+            TransientFireworksError
+            if exc.code in {408, 429, 500, 502, 503, 504}
+            else RuntimeError
+        )
+        raise error_type(f"Fireworks returned HTTP {exc.code}: {details}") from exc
     except URLError as exc:
-        raise RuntimeError(f"Fireworks request failed: {exc.reason}") from exc
+        raise TransientFireworksError(
+            f"Fireworks request failed: {exc.reason}"
+        ) from exc
 
     try:
         decoded = cast(object, json.loads(response_bytes))
