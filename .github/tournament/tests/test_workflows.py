@@ -307,6 +307,12 @@ def test_trusted_refetches_immutable_blobs_without_pr_checkout() -> None:
     assert "github.event.workflow_run.head_sha" in fetch_step
     assert "github.event.workflow_run.head_repository.full_name" in fetch_step
     assert "gh api" in fetch_step or "github.rest.repos.getContent" in fetch_step
+    assert "application/vnd.github.raw" not in fetch_step
+    assert "/tmp/submission-content.json" in fetch_step
+    assert re.search(r"jq\s+-e[^\n]*\.type\s*==\s*\\?\"file\\?\"", fetch_step)
+    assert re.search(r"jq\s+-e[^\n]*\.encoding\s*==\s*\\?\"base64\\?\"", fetch_step)
+    assert "jq -r .content" in fetch_step
+    assert "base64 --decode" in fetch_step
     assert "git checkout" not in fetch_step
     assert "git clone" not in fetch_step
     assert "git fetch" not in fetch_step
