@@ -292,13 +292,17 @@ def test_trusted_refetches_immutable_blobs_without_pr_checkout() -> None:
     assert "actions/download-artifact@" not in text
 
     assert_organizer_ref_guard(text, r"check out.*trusted.*scorer.*code")
-    checkouts = checkout_steps(text)
-    assert checkouts, "Trusted scoring must explicitly checkout its trusted code"
-    for step in checkouts:
-        assert "ref: ${{ vars.ORGANIZER_REF }}" in step
-        assert "workflow_run.head_sha" not in step
-        assert "pull_request.head" not in step
-        assert re.search(r"(?m)^\s+persist-credentials:\s*false\s*$", step)
+    trusted_step = named_step(text, r"check out.*trusted.*scorer.*code")
+    assert "ref: ${{ vars.ORGANIZER_REF }}" in trusted_step
+    assert "workflow_run.head_sha" not in trusted_step
+    assert "pull_request.head" not in trusted_step
+    assert re.search(r"(?m)^\s+persist-credentials:\s*false\s*$", trusted_step)
+
+    leaderboard_step = named_step(text, r"check out.*leaderboard")
+    assert "uses: actions/checkout@" in leaderboard_step
+    assert "ref: ${{ vars.LEADERBOARD_BRANCH }}" in leaderboard_step
+    assert "path: leaderboard-site" in leaderboard_step
+    assert re.search(r"(?m)^\s+persist-credentials:\s*true\s*$", leaderboard_step)
 
     fetch_step = named_step(
         text, r"(?:re-?fetch|download).*exact.*(?:submission )?blobs"
@@ -375,6 +379,8 @@ def test_trusted_scoring_gates_secrets_and_atomically_reserves_eight_attempts() 
     assert "prompt_sha256" in reserve_step
     assert "display_name" in reserve_step
     assert "submission" in reserve_step.lower()
+    assert "gh repo clone" not in reserve_step
+    assert "LEADERBOARD_DIR" in reserve_step
 
     score_step = named_step(text, r"score.*(?:fixed )?(?:evaluation )?bank")
     assert text.index(gate_step) < text.index(reserve_step) < text.index(score_step)
@@ -416,6 +422,7 @@ def test_leaderboard_update_is_serialized_append_only_and_non_force() -> None:
     update_step = named_step(text, r"update.*leaderboard")
 
     assert "LEADERBOARD_BRANCH: ${{ vars.LEADERBOARD_BRANCH }}" in text
+    assert "LEADERBOARD_DIR: ${{ github.workspace }}/leaderboard-site" in text
     assert "append" in update_step.lower()
     assert "git push" in update_step
     assert "LEADERBOARD_BRANCH" in update_step
@@ -425,10 +432,10 @@ def test_leaderboard_update_is_serialized_append_only_and_non_force() -> None:
     assert "prompt" not in update_step.lower()
     assert "evaluation_bank" not in update_step
     leaderboard_path = (
-        "/tmp/leaderboard/.github/tournament/dashboard/leaderboard/leaderboard.json"
+        "${LEADERBOARD_DIR}/.github/tournament/dashboard/leaderboard/leaderboard.json"
     )
     assert leaderboard_path in update_step
-    assert "/tmp/leaderboard/dashboard/" not in update_step
+    assert "/tmp/leaderboard" not in update_step
     assert "git add .github/tournament/dashboard/leaderboard/leaderboard.json" in (
         update_step
     )
