@@ -2,6 +2,15 @@ name: Playground smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      prompt_mode:
+        description: Prompt used by the smoke run
+        required: true
+        default: baseline
+        type: choice
+        options:
+          - baseline
+          - weak-control
 
 permissions:
   contents: read
@@ -20,7 +29,12 @@ jobs:
       - name: Run real-model tournament proof
         env:
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
-        run: uv run --frozen python scripts/run_playground.py
+        run: |
+          prompt_path="starter/prompt.example.txt"
+          if [[ "${{ inputs.prompt_mode }}" == "weak-control" ]]; then
+            prompt_path="starter/prompt.weak-control.txt"
+          fi
+          uv run --frozen python scripts/run_playground.py --prompt-path "$prompt_path"
 
       - name: Upload participant-safe result
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
