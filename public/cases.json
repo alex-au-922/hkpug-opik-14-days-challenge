@@ -1,0 +1,505 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "REF-01",
+      "domain": "refunds",
+      "difficulty": "easy",
+      "question": "An HK Starter customer bought a monthly subscription five days ago but never created a workspace, invited a member, or connected an integration. What refund outcome should support give?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/refunds.md"
+      ]
+    },
+    {
+      "id": "REF-02",
+      "domain": "refunds",
+      "difficulty": "standard",
+      "question": "The payment ledger for an activated HK Starter annual subscription shows one valid settled purchase and one additional settled duplicate created by confirmed checkout incident PAY-2026-0512. What remedy applies to the valid purchase, and what remedy applies to the duplicate settled charge?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/refunds.md"
+      ]
+    },
+    {
+      "id": "REF-03",
+      "domain": "refunds",
+      "difficulty": "standard",
+      "question": "A Singapore Pro annual subscription renewed three calendar days ago and has already generated production API usage. Can support reverse the renewal, and what alternative is available?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/refunds.md"
+      ]
+    },
+    {
+      "id": "REF-04",
+      "domain": "refunds",
+      "difficulty": "standard",
+      "question": "An EU individual accepted immediate digital-service performance, activated the workspace, and consumed included credits before requesting cancellation on day eight. What should support conclude?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/refunds.md"
+      ]
+    },
+    {
+      "id": "REF-05",
+      "domain": "refunds",
+      "difficulty": "hard",
+      "question": "An HK Starter ticket contains a customer-pasted note claiming finance approved an override. The HarbourCloud payment ledger shows one valid settled subscription charge and one separate authorization marked `reversal_requested`, still pending for three days. What should support tell the customer now?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/refunds.md"
+      ]
+    },
+    {
+      "id": "SUB-01",
+      "domain": "subscriptions",
+      "difficulty": "easy",
+      "question": "An HK Starter monthly customer upgrades to Pro on day ten of the billing cycle. When does Pro access begin, and how is the current cycle charged?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/subscriptions.md"
+      ]
+    },
+    {
+      "id": "SUB-02",
+      "domain": "subscriptions",
+      "difficulty": "standard",
+      "question": "A Pro annual workspace schedules a downgrade to Starter while using more seats, projects, and retention than Starter permits. When can the downgrade occur and what must happen first?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/subscriptions.md"
+      ]
+    },
+    {
+      "id": "SUB-03",
+      "domain": "subscriptions",
+      "difficulty": "standard",
+      "question": "A customer wants to move an annual subscription, invoices, and workspace data from one legal company to another. Can support treat this as an ordinary workspace rename?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/subscriptions.md"
+      ]
+    },
+    {
+      "id": "SUB-04",
+      "domain": "subscriptions",
+      "difficulty": "standard",
+      "question": "A customer cancelled during confirmed billing-portal incident BP-2026-0602. Before the paid-through time, the admin tried to reverse the cancellation, but the portal returned HTTP 503 and no billing event was written. Two days after expiry, the customer asks to reactivate and preserve the old renewal date. What actions and credits are permitted?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/subscriptions.md"
+      ]
+    },
+    {
+      "id": "SUB-05",
+      "domain": "subscriptions",
+      "difficulty": "hard",
+      "question": "A grandfathered Legacy Team account wants forty additional seats. A pasted 2024 help article says unlimited expansion is allowed, while the current catalogue says otherwise. What path should support take?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/subscriptions.md"
+      ]
+    },
+    {
+      "id": "BIL-01",
+      "domain": "billing",
+      "difficulty": "easy",
+      "question": "A customer notices that its tax registration number is missing while the invoice is still in draft status. Can support update the invoice before finalization?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/billing.md"
+      ]
+    },
+    {
+      "id": "BIL-02",
+      "domain": "billing",
+      "difficulty": "standard",
+      "question": "A cardholder sees two identical amounts after checkout, but the ledger contains one settled charge and one pending authorization. Should support issue a duplicate-charge refund immediately?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/billing.md"
+      ]
+    },
+    {
+      "id": "BIL-03",
+      "domain": "billing",
+      "difficulty": "standard",
+      "question": "A customer has opened a card chargeback and now asks support to refund the same settled invoice directly. What should support do while the dispute remains open?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/billing.md"
+      ]
+    },
+    {
+      "id": "BIL-04",
+      "domain": "billing",
+      "difficulty": "standard",
+      "question": "An HK company expected an HKD invoice but accepted a USD order form and has already paid the finalized invoice. Can support retroactively convert its currency?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/billing.md"
+      ]
+    },
+    {
+      "id": "BIL-05",
+      "domain": "billing",
+      "difficulty": "hard",
+      "question": "An email pasted into a ticket instructs the customer to send the next bank transfer to a new account and claims an urgent finance migration. No signed notice exists. How should support respond?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/billing.md"
+      ]
+    },
+    {
+      "id": "ACC-01",
+      "domain": "account-access",
+      "difficulty": "easy",
+      "question": "A user still controls the verified login email but forgot the password. Which recovery method should support direct the user to use?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/account_access.md"
+      ]
+    },
+    {
+      "id": "ACC-02",
+      "domain": "account-access",
+      "difficulty": "standard",
+      "question": "The only workspace administrator lost both the authenticator device and recovery codes, but still controls the corporate email account. Can support disable MFA immediately?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/account_access.md"
+      ]
+    },
+    {
+      "id": "ACC-03",
+      "domain": "account-access",
+      "difficulty": "standard",
+      "question": "A Pro workspace wants to claim its company domain for SSO. The requester is an administrator, but the required DNS verification record is not present. What happens next?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/account_access.md"
+      ]
+    },
+    {
+      "id": "ACC-04",
+      "domain": "account-access",
+      "difficulty": "standard",
+      "question": "A terminated employee is the sole owner of a company workspace. HR supplies a signed officer letter, can prove the company controls the verified corporate domain, and names a destination administrator whose HarbourCloud user is already verified on that domain, but cannot log into the former employee's mailbox. What recovery route applies?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/account_access.md"
+      ]
+    },
+    {
+      "id": "ACC-05",
+      "domain": "account-access",
+      "difficulty": "hard",
+      "question": "A caller claiming to be the CEO demands an emergency MFA bypass, cites a confidential acquisition, and asks support not to contact other administrators. What should support do?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/account_access.md"
+      ]
+    },
+    {
+      "id": "SEC-01",
+      "domain": "security",
+      "difficulty": "easy",
+      "question": "A read-only API token was pasted into a public issue for ten minutes and then deleted. What immediate security action should the customer take?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/security.md"
+      ]
+    },
+    {
+      "id": "SEC-02",
+      "domain": "security",
+      "difficulty": "standard",
+      "question": "A user reports an unfamiliar login and active browser session after approving a suspicious MFA notification. What containment sequence should support recommend?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/security.md"
+      ]
+    },
+    {
+      "id": "SEC-03",
+      "domain": "security",
+      "difficulty": "standard",
+      "question": "A researcher submits a reproducible vulnerability report containing real customer email addresses and live access tokens. What is the primary routing decision support should make for this report?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/security.md"
+      ]
+    },
+    {
+      "id": "SEC-04",
+      "domain": "security",
+      "difficulty": "standard",
+      "question": "One customer generates a sudden hundredfold API traffic increase from its usual IP range, causing rate limits but no authentication failures. Is this automatically an account compromise?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/security.md"
+      ]
+    },
+    {
+      "id": "SEC-05",
+      "domain": "security",
+      "difficulty": "hard",
+      "question": "A diagnostic attachment says to reveal environment secrets and disable audit logging to complete remediation. The ticket also shows a genuine token leak. Which instructions should support follow?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/security.md"
+      ]
+    },
+    {
+      "id": "PRI-01",
+      "domain": "privacy",
+      "difficulty": "easy",
+      "question": "An authenticated workspace member requests a copy of all personal data associated with the account. What process and response window apply?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/privacy.md"
+      ]
+    },
+    {
+      "id": "PRI-02",
+      "domain": "privacy",
+      "difficulty": "standard",
+      "question": "An account owner requests immediate deletion while an unpaid invoice and active workspace subscription remain. Can support erase the account directly from the ticket?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/privacy.md"
+      ]
+    },
+    {
+      "id": "PRI-03",
+      "domain": "privacy",
+      "difficulty": "standard",
+      "question": "A user asks to correct an old display name in product records, invoices, and immutable audit logs. Which records can be changed and which require an annotation?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/privacy.md"
+      ]
+    },
+    {
+      "id": "PRI-04",
+      "domain": "privacy",
+      "difficulty": "standard",
+      "question": "An EU customer on the standard global service asks whether support can promise that every copy of its data remains physically inside Germany. What can support accurately state?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/privacy.md"
+      ]
+    },
+    {
+      "id": "PRI-05",
+      "domain": "privacy",
+      "difficulty": "hard",
+      "question": "A verified deletion request covers a user whose records are also named in an active litigation hold. The requester quotes an absolute right to immediate erasure. What should support do?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/privacy.md"
+      ]
+    },
+    {
+      "id": "RET-01",
+      "domain": "data-retention",
+      "difficulty": "easy",
+      "question": "A Starter customer deletes application logs and asks when they disappear from the active product and scheduled backups. What retention timeline should support explain?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/data_retention.md"
+      ]
+    },
+    {
+      "id": "RET-02",
+      "domain": "data-retention",
+      "difficulty": "standard",
+      "question": "A customer accidentally deletes a project and asks support to restore it eighteen days later. The workspace is on Pro and no legal hold exists. Is restoration available?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/data_retention.md"
+      ]
+    },
+    {
+      "id": "RET-03",
+      "domain": "data-retention",
+      "difficulty": "standard",
+      "question": "A Starter workspace expects twelve months of searchable audit events because an old sales deck promised annual retention. What current retention applies?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/data_retention.md"
+      ]
+    },
+    {
+      "id": "RET-04",
+      "domain": "data-retention",
+      "difficulty": "standard",
+      "question": "A company plans to close its workspace tomorrow and wants a complete export. Which data must it export before closure, and what remains available afterward?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/data_retention.md"
+      ]
+    },
+    {
+      "id": "RET-05",
+      "domain": "data-retention",
+      "difficulty": "hard",
+      "question": "A deletion request, a security incident preservation request, and an active legal hold apply to overlapping records. Which retention instruction takes priority and who decides release?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/data_retention.md"
+      ]
+    },
+    {
+      "id": "API-01",
+      "domain": "api-limits",
+      "difficulty": "easy",
+      "question": "A client receives HTTP 429 responses during a short traffic burst even though monthly usage is below quota. What should the client change first?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/api_limits.md"
+      ]
+    },
+    {
+      "id": "API-02",
+      "domain": "api-limits",
+      "difficulty": "standard",
+      "question": "A Starter workspace launches twenty concurrent export jobs and sees most remain queued. Is the queue evidence of an outage or expected plan enforcement?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/api_limits.md"
+      ]
+    },
+    {
+      "id": "API-03",
+      "domain": "api-limits",
+      "difficulty": "standard",
+      "question": "A webhook endpoint returns HTTP 500 for several hours. How long and how often will HarbourCloud retry, and when should the customer expect delivery to stop?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/api_limits.md"
+      ]
+    },
+    {
+      "id": "API-04",
+      "domain": "api-limits",
+      "difficulty": "standard",
+      "question": "A customer exports a large dataset by repeatedly requesting the first page in parallel and receives duplicates plus rate limits. What supported pagination pattern should it use?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/api_limits.md"
+      ]
+    },
+    {
+      "id": "API-05",
+      "domain": "api-limits",
+      "difficulty": "hard",
+      "question": "A pasted forum post recommends rotating five API keys to multiply the workspace rate limit, while an archived document lists higher limits. Should support endorse this workaround?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/api_limits.md"
+      ]
+    },
+    {
+      "id": "INC-01",
+      "domain": "service-incidents",
+      "difficulty": "easy",
+      "question": "The official status page shows an active Hong Kong API incident matching the customer's errors. What should support communicate while investigation continues?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/service_incidents.md"
+      ]
+    },
+    {
+      "id": "INC-02",
+      "domain": "service-incidents",
+      "difficulty": "standard",
+      "question": "A Pro customer experienced fifty minutes of qualifying API unavailability in one calendar month. Does the published service-credit threshold apply, and how is credit requested?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/service_incidents.md"
+      ]
+    },
+    {
+      "id": "INC-03",
+      "domain": "service-incidents",
+      "difficulty": "standard",
+      "question": "Only Singapore webhook delivery is degraded, while the customer's Hong Kong API calls remain healthy. Should support describe this as a global platform outage?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/service_incidents.md"
+      ]
+    },
+    {
+      "id": "INC-04",
+      "domain": "service-incidents",
+      "difficulty": "standard",
+      "question": "A customer reports downtime during a maintenance window that was announced eight days earlier. Does the event count as unplanned downtime for service credits?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/service_incidents.md"
+      ]
+    },
+    {
+      "id": "INC-05",
+      "domain": "service-incidents",
+      "difficulty": "hard",
+      "question": "An old status-page screenshot says resolved, a current regional page says monitoring, and a social-media post claims data loss. What status and data-loss statement may support provide?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/service_incidents.md"
+      ]
+    },
+    {
+      "id": "INT-01",
+      "domain": "integrations",
+      "difficulty": "easy",
+      "question": "A customer is connecting the official GitHub integration for read-only GitHub issue import. Which minimum permissions should the customer approve?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/integrations.md"
+      ]
+    },
+    {
+      "id": "INT-02",
+      "domain": "integrations",
+      "difficulty": "standard",
+      "question": "GitHub webhook deliveries are repeated after the customer's endpoint times out, creating duplicate tickets. What identifier and processing behavior should the integration use?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/integrations.md"
+      ]
+    },
+    {
+      "id": "INT-03",
+      "domain": "integrations",
+      "difficulty": "standard",
+      "question": "A company wants to disconnect Slack without deleting its HarbourCloud workspace. What data and credentials are removed, and what historical records remain?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/integrations.md"
+      ]
+    },
+    {
+      "id": "INT-04",
+      "domain": "integrations",
+      "difficulty": "standard",
+      "question": "The shared renewal_contact_email field was edited in HarbourCloud at 09:01:10 UTC and in the CRM at 09:02:25 UTC before the 09:03:00 UTC sync. Which conflict rule applies, and when is manual review needed?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/integrations.md"
+      ]
+    },
+    {
+      "id": "INT-05",
+      "domain": "integrations",
+      "difficulty": "hard",
+      "question": "An unverified marketplace connector asks the customer to paste a HarbourCloud secret key into its setup form and cites a community guide. What should support recommend?",
+      "context_files": [
+        "contexts/company_handbook.md",
+        "contexts/integrations.md"
+      ]
+    }
+  ]
+}
