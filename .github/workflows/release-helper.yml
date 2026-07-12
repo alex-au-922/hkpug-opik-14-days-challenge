@@ -83,6 +83,7 @@ jobs:
             fi
             rm -f dist/work/hkpug-opik-helper dist/work/hkpug-opik-helper.exe
           done
+          rmdir dist/work
           (cd dist && sha256sum hkpug-opik-helper_* > checksums.txt)
 
       - name: Publish GitHub release
