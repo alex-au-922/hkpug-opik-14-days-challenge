@@ -9,6 +9,7 @@ description = "Public challenge package and contracts for the HKPUG 14-day Opik 
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "cryptography>=45,<46",
   "pydantic>=2.8,<3",
   "pyright>=1.1.402",
   "pytest>=8.3,<9",

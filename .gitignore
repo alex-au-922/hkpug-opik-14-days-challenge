@@ -3,5 +3,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .pyright/
+.local/
 dist/
 *.pyc
+submission/prompt.txt
