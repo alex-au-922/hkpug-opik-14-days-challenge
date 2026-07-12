@@ -18,6 +18,7 @@ env:
   MAX_ATTEMPTS: ${{ vars.MAX_ATTEMPTS }}
   MAX_DAILY_ATTEMPTS: 2
   LEADERBOARD_BRANCH: ${{ vars.LEADERBOARD_BRANCH }}
+  LEADERBOARD_DIR: ${{ github.workspace }}/leaderboard-site
 
 jobs:
   score:
@@ -82,6 +83,13 @@ jobs:
           ref: ${{ vars.ORGANIZER_REF }}
           path: trusted
           persist-credentials: false
+
+      - name: Check out leaderboard
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ vars.LEADERBOARD_BRANCH }}
+          path: leaderboard-site
+          persist-credentials: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
@@ -153,12 +161,10 @@ jobs:
           [[ "$MAX_ATTEMPTS" == "8" ]]
           [[ "$MAX_DAILY_ATTEMPTS" == "2" ]]
           test "$HEAD_SHA" = "$VERIFIED_HEAD_SHA"
-          gh repo clone "$GITHUB_REPOSITORY" /tmp/leaderboard -- \
-            --branch "$LEADERBOARD_BRANCH" --single-branch
           install -d -m 700 /tmp/private
-          if [[ -s /tmp/leaderboard/state/events.jsonl.cms ]]; then
+          if [[ -s "$LEADERBOARD_DIR/state/events.jsonl.cms" ]]; then
             openssl cms -decrypt -binary -inform DER \
-              -in /tmp/leaderboard/state/events.jsonl.cms \
+              -in "$LEADERBOARD_DIR/state/events.jsonl.cms" \
               -inkey /tmp/private/scorer-key.pem \
               -recip public_keys/scorer_cert.pem \
               -out /tmp/private/events.jsonl
@@ -184,12 +190,12 @@ jobs:
             --output /tmp/private/reservation.json
           echo "ALREADY_SCORED=$(jq -r .already_scored /tmp/private/reservation.json)" >> "$GITHUB_ENV"
           if ! cmp -s /tmp/private/events-before.jsonl /tmp/private/events.jsonl; then
-            install -d /tmp/leaderboard/state
+            install -d "$LEADERBOARD_DIR/state"
             openssl cms -encrypt -binary -aes-256-cbc \
               -in /tmp/private/events.jsonl -outform DER \
-              -out /tmp/leaderboard/state/events.jsonl.cms \
+              -out "$LEADERBOARD_DIR/state/events.jsonl.cms" \
               public_keys/scorer_cert.pem
-            cd /tmp/leaderboard
+            cd "$LEADERBOARD_DIR"
             git config user.name github-actions
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add state/events.jsonl.cms
@@ -269,7 +275,7 @@ jobs:
             --events /tmp/private/events.jsonl \
             --summary /tmp/private/scoring/summary.json \
             --submission-identity "$IDENTITY" \
-            --leaderboard /tmp/leaderboard/.github/tournament/dashboard/leaderboard/leaderboard.json \
+            --leaderboard "${LEADERBOARD_DIR}/.github/tournament/dashboard/leaderboard/leaderboard.json" \
             --challenge-name "HKPUG Opik 14-Day Challenge" \
             --starts-at "${{ vars.CHALLENGE_START_AT }}" \
             --ends-at "${{ vars.CHALLENGE_END_AT }}" \
@@ -278,9 +284,9 @@ jobs:
             ! cmp -s /tmp/private/events-before-score.jsonl /tmp/private/events.jsonl
           openssl cms -encrypt -binary -aes-256-cbc \
             -in /tmp/private/events.jsonl -outform DER \
-            -out /tmp/leaderboard/state/events.jsonl.cms \
+            -out "$LEADERBOARD_DIR/state/events.jsonl.cms" \
             public_keys/scorer_cert.pem
-          cd /tmp/leaderboard
+          cd "$LEADERBOARD_DIR"
           git add .github/tournament/dashboard/leaderboard/leaderboard.json state/events.jsonl.cms
           git commit -m "score: append completed attempt"
           git push origin "HEAD:${LEADERBOARD_BRANCH}"
