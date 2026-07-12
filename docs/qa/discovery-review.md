@@ -8,13 +8,13 @@ This ledger records findings from independent discovery reviews before productio
 
 | Severity | Case | Finding | Status |
 | --- | --- | --- | --- |
-| Important | REF-02 | The question does not distinguish one legitimate purchase plus one settled duplicate from two valid subscriptions. | Open |
-| Important | SUB-04 | The outcome depends on whether the confirmed incident prevented cancellation reversal, but the question omits that deciding fact. | Open |
-| Important | INT-01 | "Issue sync" does not say whether the integration is read-only or two-way, so the minimum OAuth permissions are ambiguous. | Open |
-| Important | INT-04 | The conflict rule depends on the edited field and timing window, but neither is specified precisely. | Open |
-| Moderate | REF-05 | The two card entries are not classified precisely enough for one deterministic remedy. | Open |
-| Moderate | ACC-04 | The destination owner and verified corporate-domain evidence should be explicit. | Open |
-| Moderate | SEC-03 | The case combines product security, incident response, and privacy routing; narrow the primary decision. | Open |
+| Important | REF-02 | The question does not distinguish one legitimate purchase plus one settled duplicate from two valid subscriptions. | Closed in `c28cec1`; independent review approved. |
+| Important | SUB-04 | The outcome depends on whether the confirmed incident prevented cancellation reversal, but the question omits that deciding fact. | Closed in `c28cec1`; independent review approved. |
+| Important | INT-01 | "Issue sync" does not say whether the integration is read-only or two-way, so the minimum OAuth permissions are ambiguous. | Closed in `fa48438`; independent review approved. |
+| Important | INT-04 | The conflict rule depends on the edited field and timing window, but neither is specified precisely. | Closed in `c28cec1`; independent review approved. |
+| Moderate | REF-05 | The two card entries are not classified precisely enough for one deterministic remedy. | Closed in `fa48438`; independent review approved. |
+| Moderate | ACC-04 | The destination owner and verified corporate-domain evidence should be explicit. | Closed in `fa48438`; independent review approved. |
+| Moderate | SEC-03 | The case combines product security, incident response, and privacy routing; narrow the primary decision. | Closed in `c28cec1`; independent review approved. |
 | Moderate | Hard tier | Ten hard cases overuse stale or untrusted instructions, limiting skill diversity and prompt-improvement headroom. | Open |
 
 ## Content Rules
