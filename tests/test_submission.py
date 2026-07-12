@@ -6,7 +6,7 @@ import os
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, TypedDict
+from typing import Any, Callable, TypedDict
 
 import pytest
 from cryptography import x509
@@ -485,6 +485,83 @@ def create_alternate_recipient(
     return cert_path, key_path
 
 
+def create_key_agreement_recipient(
+    workspace: Path,
+    base_paths: CertificateMaterial,
+    *,
+    common_name: str,
+) -> tuple[Path, Path]:
+    private_directory = workspace / ".local" / common_name
+    public_directory = workspace / "public_keys"
+    private_directory.mkdir(parents=True, exist_ok=True)
+    public_directory.mkdir(parents=True, exist_ok=True)
+
+    key_path = private_directory / f"{common_name}_key.pem"
+    csr_path = private_directory / f"{common_name}.csr"
+    cert_path = public_directory / f"{common_name}_cert.pem"
+    ext_path = private_directory / f"{common_name}.ext"
+    write_file(
+        ext_path,
+        "\n".join(
+            [
+                "basicConstraints=critical,CA:FALSE",
+                "keyUsage=critical,keyAgreement",
+                "subjectKeyIdentifier=hash",
+                "authorityKeyIdentifier=keyid,issuer",
+            ]
+        )
+        + "\n",
+    )
+    run_checked(
+        [
+            "openssl",
+            "ecparam",
+            "-name",
+            "prime256v1",
+            "-genkey",
+            "-noout",
+            "-out",
+            str(key_path),
+        ]
+    )
+    set_private_permissions(key_path)
+    run_checked(
+        [
+            "openssl",
+            "req",
+            "-new",
+            "-key",
+            str(key_path),
+            "-subj",
+            f"/CN={common_name}",
+            "-out",
+            str(csr_path),
+        ]
+    )
+    run_checked(
+        [
+            "openssl",
+            "x509",
+            "-req",
+            "-in",
+            str(csr_path),
+            "-CA",
+            str(base_paths["ca_cert_path"]),
+            "-CAkey",
+            str(base_paths["ca_key_path"]),
+            "-CAcreateserial",
+            "-out",
+            str(cert_path),
+            "-days",
+            "825",
+            "-sha256",
+            "-extfile",
+            str(ext_path),
+        ]
+    )
+    return cert_path, key_path
+
+
 def write_expired_certificate(
     *,
     ca_cert_path: Path,
@@ -612,6 +689,34 @@ def run_verify_cli(paths: SubmissionPaths) -> subprocess.CompletedProcess[str]:
     )
 
 
+def run_sign_manifest_cli(
+    *,
+    manifest_path: Path,
+    private_key_path: Path,
+    signature_path: Path,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "uv",
+            "run",
+            "python",
+            "-m",
+            "hkpug_challenge.submission",
+            "sign-manifest",
+            "--manifest-path",
+            str(manifest_path),
+            "--private-key-path",
+            str(private_key_path),
+            "--signature-path",
+            str(signature_path),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def mutate_ciphertext(paths: SubmissionPaths) -> None:
     ciphertext_bytes = paths["ciphertext_path"].read_bytes()
     paths["ciphertext_path"].write_bytes(ciphertext_bytes[:-1] + b"\x00")
@@ -707,6 +812,28 @@ def test_verify_submission_rejects_multiple_cms_recipients(tmp_path: Path) -> No
         tmp_path,
         base_paths,
         common_name="extra-recipient",
+    )
+    paths = create_manual_submission(
+        tmp_path,
+        "Minimal prompt.",
+        recipient_cert_paths=[
+            base_paths["scorer_cert_path"],
+            extra_recipient_cert_path,
+        ],
+    )
+
+    with pytest.raises(ValueError, match="exactly one recipient"):
+        verify_paths(paths)
+
+
+def test_verify_submission_rejects_scorer_ktri_plus_key_agreement_recipient(
+    tmp_path: Path,
+) -> None:
+    base_paths = create_certificate_material(tmp_path)
+    extra_recipient_cert_path, _ = create_key_agreement_recipient(
+        tmp_path,
+        base_paths,
+        common_name="key-agreement-recipient",
     )
     paths = create_manual_submission(
         tmp_path,
@@ -848,6 +975,62 @@ def test_verify_submission_rejects_symlinked_manifest(tmp_path: Path) -> None:
         verify_paths(paths)
 
 
+def test_verify_submission_passes_openssl_snapshots_to_decryption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = create_submission(tmp_path, "Minimal prompt.")
+    original_ciphertext = paths["ciphertext_path"].read_bytes()
+    original_scorer_key = paths["scorer_key_path"].read_bytes()
+    original_scorer_cert = paths["scorer_cert_path"].read_bytes()
+    observed_decrypt = False
+
+    def fake_run(args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        del kwargs
+        command = [str(part) for part in args]
+        if command[:4] == ["openssl", "cms", "-cmsout", "-print"]:
+            scorer_certificate = x509.load_pem_x509_certificate(original_scorer_cert)
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=(
+                    "algorithm: aes-256-cbc \n"
+                    "d.ktri:\n"
+                    f"  issuer: {scorer_certificate.issuer.rfc4514_string()}\n"
+                    f"  serialNumber: 0x{scorer_certificate.serial_number:x}\n"
+                ),
+                stderr="",
+            )
+
+        assert command[:3] == ["openssl", "cms", "-decrypt"]
+        nonlocal observed_decrypt
+        observed_decrypt = True
+        in_path = Path(command[command.index("-in") + 1])
+        key_path = Path(command[command.index("-inkey") + 1])
+        cert_path = Path(command[command.index("-recip") + 1])
+        out_path = Path(command[command.index("-out") + 1])
+
+        paths["ciphertext_path"].write_bytes(b"swapped ciphertext")
+        paths["scorer_key_path"].write_bytes(b"swapped scorer key")
+        paths["scorer_cert_path"].write_bytes(b"swapped scorer cert")
+
+        assert in_path != paths["ciphertext_path"]
+        assert key_path != paths["scorer_key_path"]
+        assert cert_path != paths["scorer_cert_path"]
+        assert in_path.read_bytes() == original_ciphertext
+        assert key_path.read_bytes() == original_scorer_key
+        assert cert_path.read_bytes() == original_scorer_cert
+
+        out_path.write_bytes(b"Minimal prompt.")
+        return subprocess.CompletedProcess(args, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr("hkpug_challenge.submission_crypto.subprocess.run", fake_run)
+
+    verify_paths(paths)
+
+    assert observed_decrypt
+
+
 @pytest.mark.parametrize(
     "path_getter",
     [
@@ -917,6 +1100,42 @@ def test_encrypt_prompt_script_rejects_group_readable_team_private_key(
     assert result.returncode != 0
     assert "private key" in result.stderr.lower()
     assert "traceback" not in result.stderr.lower()
+
+
+@pytest.mark.parametrize("key_content", ["malformed", "encrypted"])
+def test_sign_manifest_cli_reports_invalid_private_key_without_traceback(
+    tmp_path: Path,
+    key_content: str,
+) -> None:
+    paths = create_submission(tmp_path, "Minimal prompt.")
+    invalid_key_path = tmp_path / f"{key_content}_private_key.pem"
+    if key_content == "malformed":
+        invalid_key_path.write_text("not a private key", encoding="utf-8")
+    else:
+        run_checked(
+            [
+                "openssl",
+                "genrsa",
+                "-aes256",
+                "-passout",
+                "pass:secret",
+                "-out",
+                str(invalid_key_path),
+                "2048",
+            ]
+        )
+    set_private_permissions(invalid_key_path)
+
+    result = run_sign_manifest_cli(
+        manifest_path=paths["manifest_path"],
+        private_key_path=invalid_key_path,
+        signature_path=tmp_path / f"{key_content}.sig",
+    )
+
+    assert result.returncode != 0
+    assert result.stderr.startswith("error:")
+    assert "private key" in result.stderr.lower()
+    assert "Traceback" not in result.stderr
 
 
 def test_verify_submission_rejects_group_readable_scorer_private_key(

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
+from asn1crypto import cms as _cms, x509 as _asn1_x509  # type: ignore[reportMissingTypeStubs]
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -21,10 +22,8 @@ MAX_CERTIFICATE_BYTES = 16384
 MAX_CIPHERTEXT_BYTES = 65536
 MAX_PRIVATE_KEY_BYTES = 16384
 MAX_PROMPT_BYTES = 8192
-_CMS_RECIPIENT_RE = re.compile(
-    r"d\.ktri:.*?issuer:\s*(?P<issuer>.+?)\n\s*serialNumber:\s*0x(?P<serial>[0-9A-Fa-f]+)",
-    re.DOTALL,
-)
+_CMS: Any = _cms
+_ASN1_X509: Any = _asn1_x509
 
 
 def load_certificate(certificate_path: Path) -> x509.Certificate:
@@ -135,43 +134,56 @@ def verify_manifest_signature(
 def inspect_ciphertext(
     ciphertext_path: Path, scorer_certificate: x509.Certificate
 ) -> None:
-    read_bounded_regular_file(
+    ciphertext_bytes = read_bounded_regular_file(
         ciphertext_path,
         "Prompt ciphertext",
         MAX_CIPHERTEXT_BYTES,
     )
-    result = subprocess.run(
-        [
-            "openssl",
-            "cms",
-            "-cmsout",
-            "-print",
-            "-inform",
-            "DER",
-            "-in",
-            str(ciphertext_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise ValueError("Prompt ciphertext is not valid DER CMS data.")
+    try:
+        content_info: Any = _CMS.ContentInfo.load(ciphertext_bytes, strict=True)
+        if content_info["content_type"].native != "enveloped_data":
+            raise ValueError("Prompt ciphertext must be CMS EnvelopedData.")
 
-    cms_text = result.stdout
-    if "algorithm: aes-256-cbc " not in cms_text.lower():
+        enveloped_data: Any = content_info["content"]
+        recipient_infos: Any = enveloped_data["recipient_infos"]
+        encrypted_content_info: Any = enveloped_data["encrypted_content_info"]
+        algorithm = str(
+            encrypted_content_info["content_encryption_algorithm"]["algorithm"].native
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("Prompt ciphertext"):
+            raise
+        raise ValueError(
+            "Prompt ciphertext is not valid DER CMS EnvelopedData."
+        ) from exc
+
+    if algorithm != "aes256_cbc":
         raise ValueError("Prompt ciphertext must use AES-256-CBC.")
 
-    recipients = [
-        (match.group("issuer").strip(), int(match.group("serial"), 16))
-        for match in _CMS_RECIPIENT_RE.finditer(cms_text)
-    ]
-    if len(recipients) != 1:
+    if len(recipient_infos) != 1:
         raise ValueError("Prompt ciphertext must contain exactly one recipient.")
 
-    issuer, serial_number = recipients[0]
-    expected_issuer = scorer_certificate.issuer.rfc4514_string()
-    if issuer != expected_issuer or serial_number != scorer_certificate.serial_number:
+    recipient_info: Any = recipient_infos[0]
+    if recipient_info.name != "ktri":
+        raise ValueError("Prompt ciphertext recipient must be key transport.")
+
+    recipient_identifier: Any = recipient_info.chosen["rid"]
+    if recipient_identifier.name != "issuer_and_serial_number":
+        raise ValueError("Prompt ciphertext recipient must use issuerAndSerialNumber.")
+
+    issuer_and_serial: Any = recipient_identifier.chosen
+    scorer_certificate_asn1: Any = _ASN1_X509.Certificate.load(
+        scorer_certificate.public_bytes(serialization.Encoding.DER),
+        strict=True,
+    )
+    expected_issuer: Any = scorer_certificate_asn1["tbs_certificate"]["issuer"]
+    expected_serial_number = int(
+        scorer_certificate_asn1["tbs_certificate"]["serial_number"].native
+    )
+    if (
+        issuer_and_serial["issuer"].dump() != expected_issuer.dump()
+        or int(issuer_and_serial["serial_number"].native) != expected_serial_number
+    ):
         raise ValueError(
             "Prompt ciphertext recipient must match the trusted scorer recipient."
         )
@@ -183,9 +195,33 @@ def decrypt_ciphertext(
     scorer_private_key_path: Path,
     scorer_cert_path: Path,
 ) -> bytes:
-    read_private_key_file(scorer_private_key_path, "Scorer private key")
-    read_bounded_regular_file(scorer_cert_path, "Certificate", MAX_CERTIFICATE_BYTES)
-    with tempfile.NamedTemporaryFile() as plaintext_file:
+    ciphertext_bytes = read_bounded_regular_file(
+        ciphertext_path,
+        "Prompt ciphertext",
+        MAX_CIPHERTEXT_BYTES,
+    )
+    private_key_bytes = read_private_key_file(
+        scorer_private_key_path, "Scorer private key"
+    )
+    certificate_bytes = read_bounded_regular_file(
+        scorer_cert_path,
+        "Certificate",
+        MAX_CERTIFICATE_BYTES,
+    )
+    with tempfile.TemporaryDirectory() as temp_directory_name:
+        temp_directory = Path(temp_directory_name)
+        if os.name != "nt":
+            temp_directory.chmod(0o700)
+        snapshot_ciphertext_path = _write_private_snapshot(
+            temp_directory, "ciphertext.der", ciphertext_bytes
+        )
+        snapshot_private_key_path = _write_private_snapshot(
+            temp_directory, "private_key.pem", private_key_bytes
+        )
+        snapshot_certificate_path = _write_private_snapshot(
+            temp_directory, "certificate.pem", certificate_bytes
+        )
+        plaintext_path = temp_directory / "plaintext.txt"
         result = subprocess.run(
             [
                 "openssl",
@@ -195,13 +231,13 @@ def decrypt_ciphertext(
                 "-inform",
                 "DER",
                 "-in",
-                str(ciphertext_path),
+                str(snapshot_ciphertext_path),
                 "-inkey",
-                str(scorer_private_key_path),
+                str(snapshot_private_key_path),
                 "-recip",
-                str(scorer_cert_path),
+                str(snapshot_certificate_path),
                 "-out",
-                plaintext_file.name,
+                str(plaintext_path),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
@@ -211,10 +247,16 @@ def decrypt_ciphertext(
             raise ValueError(
                 "Prompt ciphertext could not be decrypted by the scorer key."
             )
-        plaintext_path = Path(plaintext_file.name)
-        if plaintext_path.stat().st_size > MAX_PROMPT_BYTES:
-            raise ValueError(f"Prompt text must be at most {MAX_PROMPT_BYTES} bytes.")
-        return plaintext_path.read_bytes()
+        try:
+            return read_bounded_regular_file(
+                plaintext_path, "Prompt text", MAX_PROMPT_BYTES
+            )
+        except ValueError as exc:
+            if str(exc) == "Prompt text file is too large.":
+                raise ValueError(
+                    f"Prompt text must be at most {MAX_PROMPT_BYTES} bytes."
+                ) from exc
+            raise
 
 
 def read_private_key_file(private_key_path: Path, label: str) -> bytes:
@@ -234,11 +276,20 @@ def load_rsa_private_key(private_key_path: Path) -> rsa.RSAPrivateKey:
         private_key = serialization.load_pem_private_key(
             private_key_bytes, password=None
         )
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError("Team private key is not valid PEM.") from exc
     if not isinstance(private_key, rsa.RSAPrivateKey):
         raise ValueError("Team private key must be an RSA private key.")
     return private_key
+
+
+def _write_private_snapshot(directory: Path, name: str, content: bytes) -> Path:
+    path = directory / name
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    file_descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(file_descriptor, "wb") as file:
+        file.write(content)
+    return path
 
 
 def _require_valid_now(certificate: x509.Certificate, label: str) -> None:
