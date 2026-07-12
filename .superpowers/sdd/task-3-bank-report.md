@@ -18,12 +18,16 @@ Status: DONE
 - Validation rejects duplicate IDs, duplicate question text, question text reused from public practice cases, unknown context files, unknown evidence IDs, overly long reference answers, and extra fields.
 - The old attempt-assignment and variant rotation API surface was removed.
 - Safe output writing still uses the reviewed `git check-ignore -v --non-matching --no-index` gate for `.local`, rejects nested repositories, opens the final file with descriptor-anchored `O_NOFOLLOW`, verifies a regular file target, and forces mode `0600`.
+- The canonical plaintext output is fixed to `.local/evaluation/evaluation_bank.json` under the repository root derived from the trusted build-script location.
+- Private cases must use an exact context-file combination published for the same domain in `public/cases.json`; arbitrary public files and cross-domain combinations are rejected.
 
 ## Verification
 
 - Red: `uv run pytest tests/test_evaluation_bank.py -q` failed with `ImportError: cannot import name 'EvaluationBank' from 'hkpug_challenge'`
 - Green: `uv run pytest tests/test_evaluation_bank.py -q`
-- Repo verification is recorded in the final task report for this change set.
+- Green: `uv run pytest -q`
+- Green: `uv run ruff check src/hkpug_challenge/evaluation_bank.py scripts/build_evaluation_bank.py tests/test_evaluation_bank.py`
+- Green: `uv run pyright src tests`
 
 ## Not Included
 
