@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
 from .dataset import EVIDENCE_ID_PATTERN
 from .evaluation_bank import EvaluationCase
-from .fireworks import FIREWORKS_MODEL, CompletionClient
+from .fireworks import FIREWORKS_MODEL, JUDGE_RESPONSE_FORMAT, CompletionClient
 from .models import Message
 from .playground import FIXED_SYSTEM_PROMPT
 
@@ -149,7 +149,8 @@ def _score_case(
             context=context,
             candidate_answer=answer_completion.content,
         ),
-        max_tokens=192,
+        max_tokens=384,
+        response_format=JUDGE_RESPONSE_FORMAT,
     )
     judge_completed_at = _timestamp()
     judge = _parse_judge(judge_completion.content)

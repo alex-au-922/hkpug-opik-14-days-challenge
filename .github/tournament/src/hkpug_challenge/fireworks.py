@@ -14,6 +14,41 @@ FIREWORKS_CHAT_URL = "https://api.fireworks.ai/inference/v1/chat/completions"
 FIREWORKS_MODEL = "accounts/fireworks/models/deepseek-v4-flash"
 JsonObject = dict[str, object]
 Transport = Callable[[str, dict[str, str], JsonObject, float], JsonObject]
+JUDGE_RESPONSE_FORMAT: JsonObject = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "judge_evaluation",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "answer_relevance": {"type": "integer"},
+                "instruction_following": {"type": "integer"},
+                "faithfulness": {"type": "integer"},
+                "reasons": {
+                    "type": "object",
+                    "properties": {
+                        "answer_relevance": {"type": "string"},
+                        "instruction_following": {"type": "string"},
+                        "faithfulness": {"type": "string"},
+                    },
+                    "required": [
+                        "answer_relevance",
+                        "instruction_following",
+                        "faithfulness",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            "required": [
+                "answer_relevance",
+                "instruction_following",
+                "faithfulness",
+                "reasons",
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -25,7 +60,11 @@ class Completion:
 
 class CompletionClient(Protocol):
     def complete(
-        self, messages: tuple[Message, ...], *, max_tokens: int
+        self,
+        messages: tuple[Message, ...],
+        *,
+        max_tokens: int,
+        response_format: JsonObject | None = None,
     ) -> Completion: ...
 
 
@@ -45,7 +84,13 @@ class FireworksClient:
         self._timeout = timeout
         self._transport = transport or _post_json
 
-    def complete(self, messages: tuple[Message, ...], *, max_tokens: int) -> Completion:
+    def complete(
+        self,
+        messages: tuple[Message, ...],
+        *,
+        max_tokens: int,
+        response_format: JsonObject | None = None,
+    ) -> Completion:
         if max_tokens < 1:
             raise ValueError("max_tokens must be positive.")
         payload: JsonObject = {
@@ -55,6 +100,8 @@ class FireworksClient:
             "max_tokens": max_tokens,
             "reasoning_effort": "none",
         }
+        if response_format is not None:
+            payload["response_format"] = response_format
         response = self._transport(
             FIREWORKS_CHAT_URL,
             {

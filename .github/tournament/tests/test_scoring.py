@@ -19,10 +19,16 @@ from hkpug_challenge.scoring import score_prompt
 class FakeCompletionClient:
     def __init__(self, responses: Sequence[str]) -> None:
         self._responses = iter(responses)
-        self.calls: list[tuple[tuple[Message, ...], int]] = []
+        self.calls: list[tuple[tuple[Message, ...], int, dict[str, object] | None]] = []
 
-    def complete(self, messages: tuple[Message, ...], *, max_tokens: int) -> Completion:
-        self.calls.append((messages, max_tokens))
+    def complete(
+        self,
+        messages: tuple[Message, ...],
+        *,
+        max_tokens: int,
+        response_format: dict[str, object] | None = None,
+    ) -> Completion:
+        self.calls.append((messages, max_tokens, response_format))
         return Completion(
             content=next(self._responses),
             prompt_tokens=100,
@@ -119,12 +125,16 @@ def test_score_prompt_returns_discovery_detail_and_aggregate_holdout(
     )
 
     assert len(client.calls) == 4
-    assert [max_tokens for _messages, max_tokens in client.calls] == [
+    assert [max_tokens for _messages, max_tokens, _format in client.calls] == [
         256,
-        192,
+        384,
         256,
-        192,
+        384,
     ]
+    assert client.calls[0][2] is None
+    assert client.calls[1][2] is not None
+    assert client.calls[2][2] is None
+    assert client.calls[3][2] is not None
     assert result["overall_score"] == 87.0
     assert result["discovery"]["score"] == 87.0
     assert result["holdout"]["score"] == 87.0

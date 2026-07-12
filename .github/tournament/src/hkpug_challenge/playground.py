@@ -8,7 +8,7 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
-from .fireworks import FIREWORKS_MODEL, CompletionClient
+from .fireworks import FIREWORKS_MODEL, JUDGE_RESPONSE_FORMAT, CompletionClient
 from .models import Message, PublicCase
 
 
@@ -107,7 +107,9 @@ def _run_case(
     )
     structure_scores = _score_structure(item.case, answer_completion.content)
     judge_completion = client.complete(
-        _judge_messages(item.case, answer_completion.content), max_tokens=192
+        _judge_messages(item.case, answer_completion.content),
+        max_tokens=384,
+        response_format=JUDGE_RESPONSE_FORMAT,
     )
     judge = _parse_judge(judge_completion.content)
     criteria: dict[str, float] = dict(structure_scores)

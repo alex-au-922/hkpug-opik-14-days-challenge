@@ -17,10 +17,16 @@ from hkpug_challenge.playground import (
 class FakeCompletionClient:
     def __init__(self, responses: Sequence[str]) -> None:
         self._responses = iter(responses)
-        self.calls: list[tuple[tuple[Message, ...], int]] = []
+        self.calls: list[tuple[tuple[Message, ...], int, dict[str, object] | None]] = []
 
-    def complete(self, messages: tuple[Message, ...], *, max_tokens: int) -> Completion:
-        self.calls.append((messages, max_tokens))
+    def complete(
+        self,
+        messages: tuple[Message, ...],
+        *,
+        max_tokens: int,
+        response_format: dict[str, object] | None = None,
+    ) -> Completion:
+        self.calls.append((messages, max_tokens, response_format))
         return Completion(
             content=next(self._responses),
             prompt_tokens=100,
@@ -46,8 +52,22 @@ def test_fireworks_client_forces_non_reasoning_deepseek_requests() -> None:
         }
 
     client = FireworksClient(api_key="test-key", transport=fake_transport)
+    response_format: dict[str, object] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "result",
+            "schema": {
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+                "required": ["ok"],
+                "additionalProperties": False,
+            },
+        },
+    }
     result = client.complete(
-        ({"role": "user", "content": "Return JSON."},), max_tokens=77
+        ({"role": "user", "content": "Return JSON."},),
+        max_tokens=77,
+        response_format=response_format,
     )
 
     assert result == Completion(
@@ -61,6 +81,7 @@ def test_fireworks_client_forces_non_reasoning_deepseek_requests() -> None:
         "temperature": 0,
         "max_tokens": 77,
         "reasoning_effort": "none",
+        "response_format": response_format,
     }
 
 
@@ -94,14 +115,15 @@ def test_playground_run_reveals_discovery_but_only_aggregates_holdout() -> None:
     )
 
     assert len(client.calls) == 6
-    assert [max_tokens for _messages, max_tokens in client.calls] == [
+    assert [max_tokens for _messages, max_tokens, _format in client.calls] == [
         256,
-        192,
+        384,
         256,
-        192,
+        384,
         256,
-        192,
+        384,
     ]
+    assert all(client.calls[index][2] is not None for index in (1, 3, 5))
     assert result["discovery"]["case_count"] == 2
     assert len(result["discovery"]["cases"]) == 2
     assert "output" in result["discovery"]["cases"][0]
