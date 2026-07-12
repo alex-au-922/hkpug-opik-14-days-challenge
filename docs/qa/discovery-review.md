@@ -8,13 +8,13 @@ This ledger records findings from independent discovery reviews before productio
 
 | Severity | Case | Finding | Status |
 | --- | --- | --- | --- |
-| Important | REF-02 | The question does not distinguish one legitimate purchase plus one settled duplicate from two valid subscriptions. | Open |
-| Important | SUB-04 | The outcome depends on whether the confirmed incident prevented cancellation reversal, but the question omits that deciding fact. | Open |
-| Important | INT-01 | "Issue sync" does not say whether the integration is read-only or two-way, so the minimum OAuth permissions are ambiguous. | Open |
-| Important | INT-04 | The conflict rule depends on the edited field and timing window, but neither is specified precisely. | Open |
-| Moderate | REF-05 | The two card entries are not classified precisely enough for one deterministic remedy. | Open |
-| Moderate | ACC-04 | The destination owner and verified corporate-domain evidence should be explicit. | Open |
-| Moderate | SEC-03 | The case combines product security, incident response, and privacy routing; narrow the primary decision. | Open |
+| Important | REF-02 | The question does not distinguish one legitimate purchase plus one settled duplicate from two valid subscriptions. | Closed in `c28cec1`; independent review approved. |
+| Important | SUB-04 | The outcome depends on whether the confirmed incident prevented cancellation reversal, but the question omits that deciding fact. | Closed in `c28cec1`; independent review approved. |
+| Important | INT-01 | "Issue sync" does not say whether the integration is read-only or two-way, so the minimum OAuth permissions are ambiguous. | Closed in `fa48438`; independent review approved. |
+| Important | INT-04 | The conflict rule depends on the edited field and timing window, but neither is specified precisely. | Closed in `c28cec1`; independent review approved. |
+| Moderate | REF-05 | The two card entries are not classified precisely enough for one deterministic remedy. | Closed in `fa48438`; independent review approved. |
+| Moderate | ACC-04 | The destination owner and verified corporate-domain evidence should be explicit. | Closed in `fa48438`; independent review approved. |
+| Moderate | SEC-03 | The case combines product security, incident response, and privacy routing; narrow the primary decision. | Closed in `c28cec1`; independent review approved. |
 | Moderate | Hard tier | Ten hard cases overuse stale or untrusted instructions, limiting skill diversity and prompt-improvement headroom. | Open |
 
 ## Content Rules
@@ -36,6 +36,11 @@ This ledger records findings from independent discovery reviews before productio
 | Important | Idempotency | A workflow rerun could consume another attempt without a stable submission identity. | Deduplicate by signed prompt digest and PR head SHA. | Open |
 | Important | Leakage | Plain prompts, hidden cases, reference answers, or traces could leak through logs or artifacts. | Log only IDs and aggregates; encrypt team feedback before upload. | Open |
 | Moderate | Validation drift | Allowed submission paths are duplicated in the sibling workflows. | Define one verifier contract and test both workflows against it. | Open |
+| Critical | Trusted input | A trusted `workflow_run` must not trust an artifact produced by an untrusted workflow. | Re-fetch the three allowed PR blobs from the API at the event's immutable head SHA and repeat verification. | Open |
+| Critical | Atomic attempts | Concurrent submissions can pass a non-atomic pre-check. | Serialize reservation updates globally; resume by submission identity after partial failure. | Open |
+| Important | Reproducibility | Temperature zero does not make a future external model call bit-for-bit reproducible. | Persist raw request/response and version metadata; replay recorded scoring without calling the model again. | Open |
+| Important | Cost controls | A 50-case run needs explicit call and token ceilings. | Cap prompt size, calls, estimated input tokens, output tokens, retries, and add a kill switch. | Open |
+| Important | Model mode | DeepSeek V4 Flash defaults to reasoning mode and can consume a short output budget before emitting JSON. | Pin `reasoning_effort: "none"` for all answer and judge calls; cover it in request-contract tests. | Open |
 
 ## Opik Import Decision
 
@@ -48,5 +53,18 @@ The production flow uses a versioned JSON bundle and documented Opik REST replay
 3. `PUT /api/v1/private/traces/feedback-scores`
 4. `PUT /api/v1/private/spans/feedback-scores`
 
-Each team receives only its consumed hidden cases, model outputs, spans, and score reasons. Reference answers, private rubrics, and unused variants are excluded.
+Each team receives the 40 discovery cases, model outputs, spans, and score reasons in its encrypted bundle. Reference answers, private rubrics, and all holdout case-level data are excluded until the tournament closes.
 
+This intentionally reveals discovery cases because diagnosis in Opik is the educational objective. The 10 fixed holdout cases preserve the tournament's generalization signal without requiring hundreds of variants.
+
+## Tournament Simplification Decision
+
+The earlier 400-variant design is superseded. It added authoring and calibration risk without improving the learning loop enough to justify the complexity.
+
+The official scorer uses one fixed private bank on all eight attempts:
+
+- 40 discovery cases with full encrypted Opik feedback after every run
+- 10 holdout cases, one per domain, with aggregate-only feedback until the tournament closes
+- final score: 75% discovery and 25% holdout
+
+This makes scores directly comparable, lets newcomers learn from real traces, and preserves a meaningful generalization signal for tournament ranking. Talks may teach investigation methods, but every scored answer must remain derivable from context supplied to the model.

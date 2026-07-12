@@ -1,0 +1,9 @@
+{
+  "teams": [
+    {
+      "team_id": "organizer-test",
+      "cert_path": "public_keys/organizer-test_cert.pem",
+      "cert_sha256": "4c9edd52c52361330e0dabba937816f203a976cdc81118be9879a1418244c76e"
+    }
+  ]
+}

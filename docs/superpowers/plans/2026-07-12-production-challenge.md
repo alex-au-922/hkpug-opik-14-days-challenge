@@ -4,22 +4,27 @@
 
 **Goal:** Ship a production GitHub tournament where teams submit encrypted prompts, receive eight hidden DeepSeek V4 Flash evaluations with encrypted Opik-compatible feedback, and follow scores on a live GitHub Pages dashboard.
 
-**Architecture:** An untrusted pull-request workflow validates a CMS-encrypted prompt and team-signed manifest without secrets. A separate trusted `workflow_run` decrypts only prompt text and a frozen hidden suite, calls Fireworks, builds portable Opik REST payloads, encrypts the feedback bundle to the submitting team, updates an append-only leaderboard, and deploys static Pages. Public cases and local tooling teach the task; hidden variants, reference rubrics, decrypted prompts, and expected answers never enter logs or public artifacts.
+**Architecture:** An untrusted pull-request workflow validates a CMS-encrypted prompt and team-signed manifest without secrets. A separate trusted `workflow_run` verifies the triggering event, re-fetches the three allowed blobs from the immutable PR head SHA, verifies them again, atomically reserves an attempt, decrypts only prompt text and one frozen 50-case private bank, calls Fireworks, builds portable Opik REST payloads for the 40 discovery cases, encrypts that feedback to the submitting team, keeps the 10 holdout cases aggregate-only until the tournament closes, updates an append-only leaderboard, and deploys static Pages. Public practice cases and local tooling teach the task; private references, decrypted prompts, and holdout inputs never enter logs or public artifacts.
 
 **Tech Stack:** Python 3.10+, `uv`, `pydantic`, `pytest`, Fireworks OpenAI-compatible HTTP API, OpenSSL CMS/RSA signatures, Opik private REST payloads, GitHub Actions, GitHub Pages, static HTML/CSS/JavaScript
 
 ## Global Constraints
 
-- Exactly 50 public case families across ten support domains.
+- Exactly 50 public practice cases across ten support domains; these are not official scoring inputs.
+- Exactly 50 fixed private scoring cases: 40 discovery cases and 10 holdout cases.
 - Exactly eight total official scored attempts per team, idempotent by signed submission identity.
 - Use `accounts/fireworks/models/deepseek-v4-flash` for participant answers.
+- Send `reasoning_effort: "none"` on every DeepSeek V4 answer and judge request; the model defaults to reasoning mode and otherwise consumes the bounded output budget before emitting the required JSON.
 - Never commit Fireworks credentials, private keys, plaintext hidden cases, reference answers, or plaintext participant prompts.
 - Never execute participant-controlled code in any workflow, especially a secret-bearing workflow.
 - Only `submission/prompt.txt.cms`, `submission/manifest.json`, and `submission/manifest.sig` may change in a scoring PR.
-- Every scored attempt emits an encrypted, team-readable Opik replay bundle and public aggregate scores without hidden answers.
+- Every scored attempt emits an encrypted, team-readable Opik replay bundle containing the 40 discovery traces without reference answers. The 10 holdout inputs, outputs, spans, and reasons remain private until the tournament closes; only their aggregate criterion scores are returned.
 - Human participants must be able to understand every public case from supplied evidence; no answer may depend on agent-only discovery, trivia, or undisclosed conventions.
-- All scoring inputs, model settings, rubric versions, and suite assignments are frozen and reproducible.
-- The public dashboard reports team best score, latest score, attempt count, run history, and criterion breakdown without exposing prompts or hidden cases.
+- All scoring inputs, raw requests, raw responses, judge outputs, model metadata, parser version, rubric version, and bank version are stored in the organizer's private run record so the recorded score can be replayed without another model call. A future model rerun is not authoritative.
+- A scored run is capped at 100 Fireworks calls, 800,000 estimated total input tokens, 256 answer tokens per case, 192 judge tokens per case, zero automatic model retries, and an 8 KiB participant prompt.
+- `SCORING_ENABLED` is a repository kill switch and must be true before an attempt can be reserved.
+- The official score is `75% discovery + 25% holdout` and uses the same private cases on all eight attempts so run-to-run changes are directly comparable.
+- The public dashboard reports team best score, latest score, attempt count, run history, discovery score, aggregate holdout score, and criterion breakdown without exposing prompts or private cases.
 
 ---
 
@@ -93,7 +98,7 @@
 
 - [ ] **Step 3: Implement canonical manifest validation and encryption script**
 
-  Manifest fields are exactly `schema_version`, `team_id`, `prompt_path`, `prompt_sha256`, and `created_at`. `prompt_path` must equal `submission/prompt.txt.cms`; the prompt is plain UTF-8 text capped at 32 KiB after trusted decryption.
+  Manifest fields are exactly `schema_version`, `team_id`, `prompt_path`, `prompt_sha256`, and `created_at`. `prompt_path` must equal `submission/prompt.txt.cms`; the prompt is plain UTF-8 text capped at 8 KiB after trusted decryption.
 
 - [ ] **Step 4: Re-run crypto tests**
 
@@ -101,42 +106,46 @@
 
   Expected: all valid and tamper tests pass.
 
-### Task 3: Hidden Suites And Fairness Validation
+### Task 3: Private Evaluation Bank And Fairness Validation
 
 **Files:**
-- Create: `src/hkpug_challenge/hidden.py`
-- Create: `scripts/build_hidden_bank.py`
-- Create: `scripts/encrypt_hidden_bank.sh`
-- Create: `.github/tournament/hidden_bank.json.cms`
-- Create locally only: `.local/hidden/domains/*.json`
-- Create: `tests/test_hidden_bank.py`
+- Create: `src/hkpug_challenge/evaluation_bank.py`
+- Create: `scripts/build_evaluation_bank.py`
+- Create: `scripts/encrypt_evaluation_bank.sh`
+- Create: `.github/tournament/evaluation_bank.json.cms`
+- Create locally only: `.local/evaluation/domains/*.json`
+- Create: `tests/test_evaluation_bank.py`
 - Create: `docs/qa/question-review.md`
 
 **Interfaces:**
-- Produces: eight frozen suites, each with one unused variant from every public family and a private reference rubric.
-- Consumes: ten domain files containing eight variants per family.
+- Produces: one frozen private bank with 40 discovery cases, 10 holdout cases, and private reference rubrics.
+- Consumes: ten private domain files containing five scored cases each.
 
-- [ ] **Step 1: Write failing hidden-bank invariants**
+- [ ] **Step 1: Write failing private-bank invariants**
 
-  Validate 400 unique variants, 50 per suite, eight per family, no repeated question text, valid context/evidence IDs, expected escalation, reference answer under 100 words, required/forbidden citation disjointness, and identical difficulty/domain distribution in all suites.
+  Validate exactly 50 unique cases, five cases per domain, 40 `discovery` and 10 `holdout`, a 10/30/10 difficulty balance, one holdout per domain, unique text distinct from public practice questions, valid context/evidence IDs, expected escalation, and reference answers under 100 words. Every case is fixed across all eight attempts.
 
 - [ ] **Step 2: Run tests and verify missing hidden data failure**
 
-  Run: `uv run pytest tests/test_hidden_bank.py -q`
+  Run: `uv run pytest tests/test_evaluation_bank.py -q`
 
-- [ ] **Step 3: Author structured hidden variants by domain**
+- [ ] **Step 3: Author the private cases by domain**
 
-  Use controlled fact substitutions, boundary flips, missing-information escalation, stale authority, transaction state, incident state, untrusted instructions, and presentation changes. Do not generate scored variants at runtime.
+  Author five private cases in each domain. Four are discovery cases and one is a holdout case. Use boundary decisions, missing-information escalation, authority precedence, transaction/incident state, and untrusted instructions without copying public practice question wording. Do not generate scored cases at runtime.
 
 - [ ] **Step 4: Conduct two independent human-style reviews**
 
   Record case IDs, severity, disposition, and reviewer in `docs/qa/question-review.md`; fix every Critical or Important ambiguity before encryption.
 
-- [ ] **Step 5: Build and encrypt the frozen bank**
+- [ ] **Step 5: Calibrate discovery and holdout partitions**
 
-  Run: `uv run python scripts/build_hidden_bank.py --input .local/hidden/domains --output .local/hidden/hidden_bank.json && scripts/encrypt_hidden_bank.sh`
+  Run the frozen baseline and organizer reference prompt against the complete bank. Human-review every reference answer. Confirm the holdout difficulty mix and baseline mean do not make its 25% contribution dominate normal discovery improvements. Record aggregate calibration without exposing private questions.
 
-  Expected: only `.github/tournament/hidden_bank.json.cms` is tracked.
+- [ ] **Step 6: Build and encrypt the frozen bank**
+
+  Run: `uv run python scripts/build_evaluation_bank.py --input .local/evaluation/domains --output .local/evaluation/evaluation_bank.json && scripts/encrypt_evaluation_bank.sh`
+
+  Expected: only `.github/tournament/evaluation_bank.json.cms` is tracked.
 
 ### Task 4: Fireworks Scoring And Portable Trace Bundle
 
@@ -150,11 +159,11 @@
 
 **Interfaces:**
 - Produces: answer calls, one structured judge call per answer, criterion scores, aggregate score, and Opik-compatible trace/span/feedback payloads.
-- Consumes: a decrypted prompt, one hidden suite, injected completion clients, immutable run metadata, and the previous leaderboard.
+- Consumes: a decrypted prompt, the fixed private evaluation bank, injected completion clients, immutable run metadata, and the previous leaderboard.
 
 - [ ] **Step 1: Write failing scoring tests with deterministic fake clients**
 
-  Prove schema/citation/escalation gates, weighted criteria, invalid-output handling, one answer and one bundled judge call per case, no prompt/reference leakage, stable IDs, and score range 0-100.
+  Prove schema/citation/escalation gates, weighted criteria, invalid-output handling, one answer and one bundled judge call per case, no prompt/reference leakage, stable IDs, score range 0-100, 100-call ceiling, token-budget ceiling, and no automatic model retry.
 
 - [ ] **Step 2: Run tests and confirm the expected failures**
 
@@ -162,11 +171,11 @@
 
 - [ ] **Step 3: Implement the Fireworks client and score contract**
 
-  Answer calls use temperature 0 and a 256-token cap. Judge calls receive question, context, participant answer, reference answer, and rubric but never the participant prompt; they return bounded `answer_relevance`, `instruction_following`, and `faithfulness` values plus short reasons.
+  Answer calls use temperature 0, `reasoning_effort: "none"`, and a 256-token cap. Judge calls use the same non-reasoning setting and receive question, context, participant answer, reference answer, and rubric but never the participant prompt; they return bounded `answer_relevance`, `instruction_following`, and `faithfulness` values plus short reasons.
 
 - [ ] **Step 4: Build portable Opik payloads**
 
-  Bundle `trace_payload.json`, `span_payload.json`, `trace_feedback.json`, `span_feedback.json`, `run.json`, and `README.txt` in one deterministic archive. Exclude hidden references and expected answers.
+  Bundle `trace_payload.json`, `span_payload.json`, `trace_feedback.json`, `span_feedback.json`, `run.json`, and `README.txt` in one deterministic archive. Include full inputs, outputs, spans, and score reasons only for the 40 discovery cases. Include aggregate holdout criterion scores without holdout inputs, outputs, per-case scores, or reasons. Exclude every reference answer and private rubric field.
 
 - [ ] **Step 5: Run scoring and bundle tests**
 
@@ -180,6 +189,7 @@
 - Create: `scripts/import_opik.py`
 - Create: `tests/test_opik_replay.py`
 - Create: `docs/import-opik.md`
+- Create: `scripts/view_feedback.py`
 
 **Interfaces:**
 - Produces: replay of traces, spans, and feedback through Opik REST endpoints with idempotent IDs.
@@ -191,7 +201,7 @@
 
 - [ ] **Step 2: Implement the smallest replay client and CLI**
 
-  Default base URL is `http://localhost:5173/api`; project names are team/run specific; importing the same bundle twice must update or deduplicate rather than create conflicting IDs.
+  Default base URL is `http://localhost:5173/api`; project names are team/run specific; importing the same bundle twice must update or deduplicate rather than create conflicting IDs. Pin the tested Opik release and provide a static local feedback viewer when Opik cannot be started.
 
 - [ ] **Step 3: Run replay tests and one local simulation**
 
@@ -218,7 +228,7 @@
 
 - [ ] **Step 2: Implement leaderboard state transitions**
 
-  Enforce attempt limits before model calls. Preserve all run summaries and compute best score with earliest-achievement tie breaking.
+  Reserve attempts before model calls using a globally serialized, append-only reservation update. A submission identity is the digest of team ID, prompt digest, and PR head SHA; reruns resume the same reservation. Failed infrastructure runs remain resumable and do not allocate another attempt. Preserve all run summaries and compute both raw quality and baseline-normalized improvement with earliest-achievement tie breaking.
 
 - [ ] **Step 3: Implement the dashboard**
 
@@ -245,7 +255,7 @@
 
 - [ ] **Step 1: Write failing workflow static tests**
 
-  Assert event separation, least-privilege permissions, pinned actions, allowed paths, no PR checkout in the trusted job, eight-attempt variable, secret names, concurrency, artifact retention, and Pages deployment.
+  Assert event separation, least-privilege permissions, commit-SHA-pinned actions, allowed paths, no PR checkout in the trusted job, eight-attempt variable, secret names, concurrency, artifact retention, and Pages deployment. The trusted workflow must require a successful `pull_request` run of the expected workflow on `main`, obtain PR number/head repository/head SHA from GitHub's event and API, re-fetch only the three allowed blobs at that SHA, re-check changed paths and signatures, and reject all inconsistent metadata.
 
 - [ ] **Step 2: Implement and lint workflows**
 
@@ -253,7 +263,7 @@
 
 - [ ] **Step 3: Configure GitHub secrets and variables**
 
-  Set `FIREWORKS_API_KEY` and `SCORER_PRIVATE_KEY_PEM` as Actions secrets. Set `MAX_ATTEMPTS=8`, `FIREWORKS_MODEL=accounts/fireworks/models/deepseek-v4-flash`, `LEADERBOARD_BRANCH=leaderboard`, and tournament timestamps as repository variables.
+  Set `FIREWORKS_API_KEY` and `SCORER_PRIVATE_KEY_PEM` as Actions secrets. Set `MAX_ATTEMPTS=8`, `FIREWORKS_MODEL=accounts/fireworks/models/deepseek-v4-flash`, `LEADERBOARD_BRANCH=leaderboard`, `SCORING_ENABLED=true`, call/token ceilings, and tournament timestamps as repository variables.
 
 - [ ] **Step 4: Create leaderboard branch and enable GitHub Pages**
 
@@ -272,7 +282,7 @@
 
 - [ ] **Step 1: Run at least three independent participant simulations**
 
-  Simulate key generation handoff, prompt editing, encryption, fork/PR submission, score feedback, artifact download, decryption, local Opik replay, prompt improvement, and resubmission. Reviewers must report confusing steps, not just software failures.
+  Simulate key generation handoff, prompt editing, a single guided submission command with dependency preflight, encryption, fork/PR submission, score feedback, artifact download, decryption, local Opik replay or static-viewer fallback, prompt improvement, and resubmission. Cover macOS, Linux, and a documented Windows WSL path. Reviewers must report confusing steps, not just software failures.
 
 - [ ] **Step 2: Fix and re-run every Critical or Important finding**
 
