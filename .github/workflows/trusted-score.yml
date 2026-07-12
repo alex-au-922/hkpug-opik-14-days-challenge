@@ -109,8 +109,12 @@ jobs:
           test "$EVENT_HEAD_REPOSITORY" = "$VERIFIED_HEAD_REPOSITORY"
           test "$EVENT_HEAD_SHA" = "$VERIFIED_HEAD_SHA"
           SUBMISSION_PATH=submission/submission.zip
-          gh api -H "Accept: application/vnd.github.raw+json" \
+          gh api \
             "repos/${VERIFIED_HEAD_REPOSITORY}/contents/${SUBMISSION_PATH}?ref=${VERIFIED_HEAD_SHA}" \
+            > /tmp/submission-content.json
+          jq -e '.type == "file" and .encoding == "base64"' \
+            /tmp/submission-content.json > /dev/null
+          jq -r .content /tmp/submission-content.json | base64 --decode \
             > /tmp/submission.zip
           chmod 600 /tmp/submission.zip
 
