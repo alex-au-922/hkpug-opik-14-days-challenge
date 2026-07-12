@@ -139,6 +139,19 @@ def workflow_name(text: str) -> str:
     return match.group(1).strip("'\"")
 
 
+def assert_organizer_ref_guard(text: str, checkout_name: str) -> None:
+    guard = named_step(text, r"validate.*organizer.*ref")
+    checkout = named_step(text, checkout_name)
+
+    assert "uses: actions/checkout@" not in guard
+    assert "ORGANIZER_REF: ${{ vars.ORGANIZER_REF }}" in guard
+    assert re.search(
+        r'\[\[\s+"\$ORGANIZER_REF"\s+=~\s+\^\[0-9a-f\]\{40\}\$\s+\]\]',
+        guard,
+    )
+    assert text.index(guard) < text.index(checkout)
+
+
 def test_required_two_stage_and_pages_workflows_exist() -> None:
     for filename in (
         VALIDATE_WORKFLOW,
@@ -184,6 +197,7 @@ def test_untrusted_validation_runs_trusted_base_code_only() -> None:
     text = load_workflow(VALIDATE_WORKFLOW)
     checkouts = checkout_steps(text)
 
+    assert_organizer_ref_guard(text, r"check out.*trusted.*base.*code")
     assert checkouts, "Validation needs an explicit checkout of trusted base code"
     trusted_step = named_step(text, r"check out.*trusted.*base.*code")
     assert "ref: ${{ vars.ORGANIZER_REF }}" in trusted_step
@@ -265,6 +279,7 @@ def test_trusted_refetches_immutable_blobs_without_pr_checkout() -> None:
     assert_exact_submission_paths(text)
     assert "actions/download-artifact@" not in text
 
+    assert_organizer_ref_guard(text, r"check out.*trusted.*scorer.*code")
     checkouts = checkout_steps(text)
     assert checkouts, "Trusted scoring must explicitly checkout its trusted code"
     for step in checkouts:
@@ -295,6 +310,7 @@ def test_trusted_refetches_immutable_blobs_without_pr_checkout() -> None:
 
 def test_playground_uses_the_organizer_ref_for_trusted_code() -> None:
     text = load_workflow(PLAYGROUND_WORKFLOW)
+    assert_organizer_ref_guard(text, r"check out.*trusted.*playground.*code")
     trusted_step = named_step(text, r"check out.*trusted.*playground.*code")
 
     assert "ref: ${{ vars.ORGANIZER_REF }}" in trusted_step
