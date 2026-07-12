@@ -4,7 +4,7 @@
 
 **Goal:** Ship a production GitHub tournament where teams submit encrypted prompts, receive eight hidden DeepSeek V4 Flash evaluations with encrypted Opik-compatible feedback, and follow scores on a live GitHub Pages dashboard.
 
-**Architecture:** An untrusted pull-request workflow validates a CMS-encrypted prompt and team-signed manifest without secrets. A separate trusted `workflow_run` decrypts only prompt text and a frozen hidden suite, calls Fireworks, builds portable Opik REST payloads, encrypts the feedback bundle to the submitting team, updates an append-only leaderboard, and deploys static Pages. Public cases and local tooling teach the task; hidden variants, reference rubrics, decrypted prompts, and expected answers never enter logs or public artifacts.
+**Architecture:** An untrusted pull-request workflow validates a CMS-encrypted prompt and team-signed manifest without secrets. A separate trusted `workflow_run` verifies the triggering event, re-fetches the three allowed blobs from the immutable PR head SHA, verifies them again, atomically reserves an attempt, decrypts only prompt text and a frozen hidden suite, calls Fireworks, builds portable Opik REST payloads, encrypts the feedback bundle to the submitting team, updates an append-only leaderboard, and deploys static Pages. Public cases and local tooling teach the task; unused hidden variants, reference rubrics, decrypted prompts, and expected answers never enter logs or public artifacts.
 
 **Tech Stack:** Python 3.10+, `uv`, `pydantic`, `pytest`, Fireworks OpenAI-compatible HTTP API, OpenSSL CMS/RSA signatures, Opik private REST payloads, GitHub Actions, GitHub Pages, static HTML/CSS/JavaScript
 
@@ -16,9 +16,11 @@
 - Never commit Fireworks credentials, private keys, plaintext hidden cases, reference answers, or plaintext participant prompts.
 - Never execute participant-controlled code in any workflow, especially a secret-bearing workflow.
 - Only `submission/prompt.txt.cms`, `submission/manifest.json`, and `submission/manifest.sig` may change in a scoring PR.
-- Every scored attempt emits an encrypted, team-readable Opik replay bundle and public aggregate scores without hidden answers.
+- Every scored attempt emits an encrypted, team-readable Opik replay bundle containing only that attempt's consumed cases and public aggregate scores without reference answers.
 - Human participants must be able to understand every public case from supplied evidence; no answer may depend on agent-only discovery, trivia, or undisclosed conventions.
-- All scoring inputs, model settings, rubric versions, and suite assignments are frozen and reproducible.
+- All scoring inputs, raw requests, raw responses, judge outputs, model metadata, parser version, rubric version, and suite assignment are stored in the encrypted run record so the recorded score can be replayed without another model call. A future model rerun is not authoritative.
+- A scored run is capped at 100 Fireworks calls, 800,000 estimated total input tokens, 256 answer tokens per case, 192 judge tokens per case, zero automatic model retries, and an 8 KiB participant prompt.
+- `SCORING_ENABLED` is a repository kill switch and must be true before an attempt can be reserved.
 - The public dashboard reports team best score, latest score, attempt count, run history, and criterion breakdown without exposing prompts or hidden cases.
 
 ---
@@ -93,7 +95,7 @@
 
 - [ ] **Step 3: Implement canonical manifest validation and encryption script**
 
-  Manifest fields are exactly `schema_version`, `team_id`, `prompt_path`, `prompt_sha256`, and `created_at`. `prompt_path` must equal `submission/prompt.txt.cms`; the prompt is plain UTF-8 text capped at 32 KiB after trusted decryption.
+  Manifest fields are exactly `schema_version`, `team_id`, `prompt_path`, `prompt_sha256`, and `created_at`. `prompt_path` must equal `submission/prompt.txt.cms`; the prompt is plain UTF-8 text capped at 8 KiB after trusted decryption.
 
 - [ ] **Step 4: Re-run crypto tests**
 
@@ -118,7 +120,7 @@
 
 - [ ] **Step 1: Write failing hidden-bank invariants**
 
-  Validate 400 unique variants, 50 per suite, eight per family, no repeated question text, valid context/evidence IDs, expected escalation, reference answer under 100 words, required/forbidden citation disjointness, and identical difficulty/domain distribution in all suites.
+  Validate 400 unique variants, 50 per suite, eight per family, no repeated question text, valid context/evidence IDs, expected escalation, reference answer under 100 words, required/forbidden citation disjointness, and identical difficulty/domain distribution in all suites. Suite assignment is deterministic from team ID and attempt number and never repeats a variant for the same team.
 
 - [ ] **Step 2: Run tests and verify missing hidden data failure**
 
@@ -132,7 +134,11 @@
 
   Record case IDs, severity, disposition, and reviewer in `docs/qa/question-review.md`; fix every Critical or Important ambiguity before encryption.
 
-- [ ] **Step 5: Build and encrypt the frozen bank**
+- [ ] **Step 5: Calibrate all suites**
+
+  Run the frozen baseline and organizer reference prompt against every suite. Human-review every reference answer and require suite baseline means to remain within 3 percentage points of the overall baseline mean. Record raw and normalized score statistics without exposing private questions.
+
+- [ ] **Step 6: Build and encrypt the frozen bank**
 
   Run: `uv run python scripts/build_hidden_bank.py --input .local/hidden/domains --output .local/hidden/hidden_bank.json && scripts/encrypt_hidden_bank.sh`
 
@@ -154,7 +160,7 @@
 
 - [ ] **Step 1: Write failing scoring tests with deterministic fake clients**
 
-  Prove schema/citation/escalation gates, weighted criteria, invalid-output handling, one answer and one bundled judge call per case, no prompt/reference leakage, stable IDs, and score range 0-100.
+  Prove schema/citation/escalation gates, weighted criteria, invalid-output handling, one answer and one bundled judge call per case, no prompt/reference leakage, stable IDs, score range 0-100, 100-call ceiling, token-budget ceiling, and no automatic model retry.
 
 - [ ] **Step 2: Run tests and confirm the expected failures**
 
@@ -166,7 +172,7 @@
 
 - [ ] **Step 4: Build portable Opik payloads**
 
-  Bundle `trace_payload.json`, `span_payload.json`, `trace_feedback.json`, `span_feedback.json`, `run.json`, and `README.txt` in one deterministic archive. Exclude hidden references and expected answers.
+  Bundle `trace_payload.json`, `span_payload.json`, `trace_feedback.json`, `span_feedback.json`, `run.json`, and `README.txt` in one deterministic archive. Include full input/output only for the fifty consumed variants so participants can diagnose their run. Exclude reference answers, private rubric fields, and every unused variant.
 
 - [ ] **Step 5: Run scoring and bundle tests**
 
@@ -180,6 +186,7 @@
 - Create: `scripts/import_opik.py`
 - Create: `tests/test_opik_replay.py`
 - Create: `docs/import-opik.md`
+- Create: `scripts/view_feedback.py`
 
 **Interfaces:**
 - Produces: replay of traces, spans, and feedback through Opik REST endpoints with idempotent IDs.
@@ -191,7 +198,7 @@
 
 - [ ] **Step 2: Implement the smallest replay client and CLI**
 
-  Default base URL is `http://localhost:5173/api`; project names are team/run specific; importing the same bundle twice must update or deduplicate rather than create conflicting IDs.
+  Default base URL is `http://localhost:5173/api`; project names are team/run specific; importing the same bundle twice must update or deduplicate rather than create conflicting IDs. Pin the tested Opik release and provide a static local feedback viewer when Opik cannot be started.
 
 - [ ] **Step 3: Run replay tests and one local simulation**
 
@@ -218,7 +225,7 @@
 
 - [ ] **Step 2: Implement leaderboard state transitions**
 
-  Enforce attempt limits before model calls. Preserve all run summaries and compute best score with earliest-achievement tie breaking.
+  Reserve attempts before model calls using a globally serialized, append-only reservation update. A submission identity is the digest of team ID, prompt digest, and PR head SHA; reruns resume the same reservation. Failed infrastructure runs remain resumable and do not allocate another attempt. Preserve all run summaries and compute both raw quality and baseline-normalized improvement with earliest-achievement tie breaking.
 
 - [ ] **Step 3: Implement the dashboard**
 
@@ -245,7 +252,7 @@
 
 - [ ] **Step 1: Write failing workflow static tests**
 
-  Assert event separation, least-privilege permissions, pinned actions, allowed paths, no PR checkout in the trusted job, eight-attempt variable, secret names, concurrency, artifact retention, and Pages deployment.
+  Assert event separation, least-privilege permissions, commit-SHA-pinned actions, allowed paths, no PR checkout in the trusted job, eight-attempt variable, secret names, concurrency, artifact retention, and Pages deployment. The trusted workflow must require a successful `pull_request` run of the expected workflow on `main`, obtain PR number/head repository/head SHA from GitHub's event and API, re-fetch only the three allowed blobs at that SHA, re-check changed paths and signatures, and reject all inconsistent metadata.
 
 - [ ] **Step 2: Implement and lint workflows**
 
@@ -253,7 +260,7 @@
 
 - [ ] **Step 3: Configure GitHub secrets and variables**
 
-  Set `FIREWORKS_API_KEY` and `SCORER_PRIVATE_KEY_PEM` as Actions secrets. Set `MAX_ATTEMPTS=8`, `FIREWORKS_MODEL=accounts/fireworks/models/deepseek-v4-flash`, `LEADERBOARD_BRANCH=leaderboard`, and tournament timestamps as repository variables.
+  Set `FIREWORKS_API_KEY` and `SCORER_PRIVATE_KEY_PEM` as Actions secrets. Set `MAX_ATTEMPTS=8`, `FIREWORKS_MODEL=accounts/fireworks/models/deepseek-v4-flash`, `LEADERBOARD_BRANCH=leaderboard`, `SCORING_ENABLED=true`, call/token ceilings, and tournament timestamps as repository variables.
 
 - [ ] **Step 4: Create leaderboard branch and enable GitHub Pages**
 
@@ -272,7 +279,7 @@
 
 - [ ] **Step 1: Run at least three independent participant simulations**
 
-  Simulate key generation handoff, prompt editing, encryption, fork/PR submission, score feedback, artifact download, decryption, local Opik replay, prompt improvement, and resubmission. Reviewers must report confusing steps, not just software failures.
+  Simulate key generation handoff, prompt editing, a single guided submission command with dependency preflight, encryption, fork/PR submission, score feedback, artifact download, decryption, local Opik replay or static-viewer fallback, prompt improvement, and resubmission. Cover macOS, Linux, and a documented Windows WSL path. Reviewers must report confusing steps, not just software failures.
 
 - [ ] **Step 2: Fix and re-run every Critical or Important finding**
 

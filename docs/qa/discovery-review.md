@@ -36,6 +36,10 @@ This ledger records findings from independent discovery reviews before productio
 | Important | Idempotency | A workflow rerun could consume another attempt without a stable submission identity. | Deduplicate by signed prompt digest and PR head SHA. | Open |
 | Important | Leakage | Plain prompts, hidden cases, reference answers, or traces could leak through logs or artifacts. | Log only IDs and aggregates; encrypt team feedback before upload. | Open |
 | Moderate | Validation drift | Allowed submission paths are duplicated in the sibling workflows. | Define one verifier contract and test both workflows against it. | Open |
+| Critical | Trusted input | A trusted `workflow_run` must not trust an artifact produced by an untrusted workflow. | Re-fetch the three allowed PR blobs from the API at the event's immutable head SHA and repeat verification. | Open |
+| Critical | Atomic attempts | Concurrent submissions can pass a non-atomic pre-check. | Serialize reservation updates globally; resume by submission identity after partial failure. | Open |
+| Important | Reproducibility | Temperature zero does not make a future external model call bit-for-bit reproducible. | Persist raw request/response and version metadata; replay recorded scoring without calling the model again. | Open |
+| Important | Cost controls | A 50-case run needs explicit call and token ceilings. | Cap prompt size, calls, estimated input tokens, output tokens, retries, and add a kill switch. | Open |
 
 ## Opik Import Decision
 
@@ -50,3 +54,4 @@ The production flow uses a versioned JSON bundle and documented Opik REST replay
 
 Each team receives only its consumed hidden cases, model outputs, spans, and score reasons. Reference answers, private rubrics, and unused variants are excluded.
 
+This intentionally reveals consumed cases to the submitting team because diagnosis in Opik is the educational objective. The tournament accepts the residual risk that teams could share decrypted feedback. Mitigations are one-time variants per team, encrypted delivery, no expected answers, deterministic team/attempt assignment, an explicit no-sharing rule, and baseline normalization. Redacting case inputs would defeat the approved improvement workflow and is therefore rejected.
