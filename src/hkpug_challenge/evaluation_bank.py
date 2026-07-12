@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -22,20 +21,22 @@ from pydantic import (
 )
 
 from .dataset import PUBLIC_DIRECTORY, load_public_cases
-from .models import PublicCase
 
 
 DIFFICULTY_COUNTS = {"easy": 10, "standard": 30, "hard": 10}
-EVIDENCE_ID_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+(?:-[A-Z0-9]+){2,}$")
+PARTITION_COUNTS = {"discovery": 40, "holdout": 10}
+EXPECTED_CASES_PER_DOMAIN = 5
+EXPECTED_HOLDOUTS_PER_DOMAIN = 1
 EXPECTED_SCHEMA_VERSION = 1
-EXPECTED_VARIANTS_PER_FAMILY = 8
+EVIDENCE_ID_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+(?:-[A-Z0-9]+){2,}$")
+INLINE_EVIDENCE_ID_PATTERN = re.compile(r"\[([A-Z][A-Z0-9]+(?:-[A-Z0-9]+){2,})\]")
 SUPPORTS_DIR_FD = os.open in os.supports_dir_fd
-SUPPORTS_NOFOLLOW = hasattr(os, "O_NOFOLLOW")
 SUPPORTS_FCHMOD = hasattr(os, "fchmod")
+SUPPORTS_NOFOLLOW = hasattr(os, "O_NOFOLLOW")
 
 
 @dataclass(frozen=True)
-class HiddenReference:
+class EvaluationReference:
     answer: str
     citations: tuple[str, ...]
     escalate: bool
@@ -43,7 +44,7 @@ class HiddenReference:
 
 
 @dataclass(frozen=True)
-class HiddenRubric:
+class EvaluationRubric:
     required_citation_groups: tuple[tuple[str, ...], ...]
     required_points: tuple[str, ...]
     prohibited_claims: tuple[str, ...]
@@ -51,25 +52,23 @@ class HiddenRubric:
 
 
 @dataclass(frozen=True)
-class HiddenVariant:
-    variant_id: str
-    family_id: str
-    slot: int
+class EvaluationCase:
+    case_id: str
+    partition: str
     domain: str
     difficulty: str
-    archetype: str | None
     question: str
-    context_files: tuple[str, ...]
-    reference: HiddenReference
-    rubric: HiddenRubric
+    context_files: tuple[str, str]
+    reference: EvaluationReference
+    rubric: EvaluationRubric
 
 
 @dataclass(frozen=True)
-class HiddenBank:
+class EvaluationBank:
     schema_version: int
     dataset_version: str
     rubric_version: str
-    variants: tuple[HiddenVariant, ...]
+    cases: tuple[EvaluationCase, ...]
 
 
 class _ReferencePayload(BaseModel):
@@ -138,54 +137,43 @@ class _RubricPayload(BaseModel):
         return tuple(cleaned)
 
 
-class _VariantPayload(BaseModel):
+class _CasePayload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
-    variant_id: str
-    family_id: str
-    slot: StrictInt
+    case_id: str
+    partition: str
     domain: str
     difficulty: str
-    archetype: str | None = None
     question: str
     context_files: tuple[str, str]
     reference: _ReferencePayload
     rubric: _RubricPayload
 
     @field_validator(
-        "variant_id", "family_id", "domain", "difficulty", "question", mode="after"
+        "case_id", "partition", "domain", "difficulty", "question", mode="after"
     )
     @classmethod
     def validate_non_empty_string(cls, value: str) -> str:
         if not value:
-            raise ValueError("Hidden variant string fields must be non-empty.")
+            raise ValueError("Evaluation case string fields must be non-empty.")
         return value
 
-    @field_validator("archetype")
+    @field_validator("partition")
     @classmethod
-    def validate_archetype(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if not value:
-            raise ValueError("Hidden variant archetype must be a non-empty string.")
-        return value
-
-    @field_validator("slot")
-    @classmethod
-    def validate_slot(cls, value: int) -> int:
-        if value < 1 or value > EXPECTED_VARIANTS_PER_FAMILY:
-            raise ValueError("Hidden variant slot must be between 1 and 8.")
+    def validate_partition(cls, value: str) -> str:
+        if value not in PARTITION_COUNTS:
+            raise ValueError("Evaluation case partition must be discovery or holdout.")
         return value
 
     @field_validator("context_files")
     @classmethod
     def validate_context_files(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         if len(values) != 2:
-            raise ValueError("Hidden variants must list exactly two context files.")
+            raise ValueError("Evaluation cases must list exactly two context files.")
         if len(set(values)) != len(values):
-            raise ValueError("Hidden variants must use distinct context files.")
+            raise ValueError("Evaluation cases must use distinct context files.")
         if any(not value for value in values):
-            raise ValueError("Hidden variant context files must be non-empty.")
+            raise ValueError("Evaluation case context files must be non-empty.")
         return values
 
 
@@ -195,54 +183,56 @@ class _BankPayload(BaseModel):
     schema_version: StrictInt
     dataset_version: str
     rubric_version: str
-    variants: tuple[_VariantPayload, ...]
+    cases: tuple[_CasePayload, ...]
 
     @field_validator("schema_version")
     @classmethod
     def validate_schema_version(cls, value: int) -> int:
         if value != EXPECTED_SCHEMA_VERSION:
-            raise ValueError("Hidden bank schema_version must be 1.")
+            raise ValueError("Evaluation bank schema_version must be 1.")
         return value
 
     @field_validator("dataset_version", "rubric_version")
     @classmethod
     def validate_version_string(cls, value: str) -> str:
         if not value:
-            raise ValueError("Hidden bank version fields must be non-empty strings.")
+            raise ValueError(
+                "Evaluation bank version fields must be non-empty strings."
+            )
         return value
 
-    @field_validator("variants")
+    @field_validator("cases")
     @classmethod
-    def validate_variants_non_empty(
-        cls, values: tuple[_VariantPayload, ...]
-    ) -> tuple[_VariantPayload, ...]:
+    def validate_cases_non_empty(
+        cls, values: tuple[_CasePayload, ...]
+    ) -> tuple[_CasePayload, ...]:
         if not values:
-            raise ValueError("Hidden bank variants must not be empty.")
+            raise ValueError("Evaluation bank cases must not be empty.")
         return values
 
 
-def load_hidden_bank(
+def load_evaluation_bank(
     path: Path, public_directory: Path = PUBLIC_DIRECTORY
-) -> HiddenBank:
+) -> EvaluationBank:
     try:
         raw_payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise ValueError(f"Hidden bank not found: {path}") from exc
+        raise ValueError(f"Evaluation bank not found: {path}") from exc
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Hidden bank is invalid JSON: {path}") from exc
-    return _parse_hidden_bank(raw_payload, public_directory=public_directory)
+        raise ValueError(f"Evaluation bank is invalid JSON: {path}") from exc
+    return _parse_evaluation_bank(raw_payload, public_directory=public_directory)
 
 
-def build_hidden_bank(
+def build_evaluation_bank(
     input_directory: Path,
     output_path: Path,
     public_directory: Path = PUBLIC_DIRECTORY,
     repository_root: Path | None = None,
-) -> HiddenBank:
+) -> EvaluationBank:
     input_paths = sorted(input_directory.glob("*.json"))
     if not input_paths:
         raise ValueError(
-            f"Hidden bank input directory has no JSON files: {input_directory}"
+            f"Evaluation bank input directory has no JSON files: {input_directory}"
         )
 
     payloads = [_read_bank_payload(path) for path in input_paths]
@@ -250,128 +240,91 @@ def build_hidden_bank(
     for payload in payloads[1:]:
         if payload.schema_version != first_payload.schema_version:
             raise ValueError(
-                "All hidden bank domain files must share one schema version."
+                "All evaluation bank domain files must share one schema version."
             )
         if payload.dataset_version != first_payload.dataset_version:
             raise ValueError(
-                "All hidden bank domain files must share one dataset version."
+                "All evaluation bank domain files must share one dataset version."
             )
         if payload.rubric_version != first_payload.rubric_version:
             raise ValueError(
-                "All hidden bank domain files must share one rubric version."
+                "All evaluation bank domain files must share one rubric version."
             )
 
     combined_payload = {
         "schema_version": first_payload.schema_version,
         "dataset_version": first_payload.dataset_version,
         "rubric_version": first_payload.rubric_version,
-        "variants": [
-            variant.model_dump(mode="python")
+        "cases": [
+            case.model_dump(mode="python")
             for payload in payloads
-            for variant in payload.variants
+            for case in payload.cases
         ],
     }
-    bank = _parse_hidden_bank(combined_payload, public_directory=public_directory)
+    bank = _parse_evaluation_bank(combined_payload, public_directory=public_directory)
     _validate_output_path(output_path=output_path, repository_root=repository_root)
-    _write_hidden_bank(output_path, bank)
+    _write_evaluation_bank(output_path, bank)
     return bank
-
-
-def assign_hidden_variant(
-    bank: HiddenBank, *, team_id: str, family_id: str, attempt: int
-) -> HiddenVariant:
-    if not team_id.strip():
-        raise ValueError("Team ID must be a non-empty string.")
-    if attempt < 1 or attempt > EXPECTED_VARIANTS_PER_FAMILY:
-        raise ValueError("Attempt must be between 1 and 8.")
-
-    variants_by_family = _variants_by_family(bank)
-    family_variants = variants_by_family.get(family_id)
-    if family_variants is None:
-        raise ValueError(f"Unknown hidden family ID: {family_id}")
-
-    offset = _stable_offset(team_id=team_id, family_id=family_id)
-    slot = ((offset + attempt - 1) % EXPECTED_VARIANTS_PER_FAMILY) + 1
-    return family_variants[slot]
-
-
-def build_attempt_suite(
-    bank: HiddenBank, *, team_id: str, attempt: int
-) -> tuple[HiddenVariant, ...]:
-    variants_by_family = _variants_by_family(bank)
-    suite = tuple(
-        assign_hidden_variant(
-            bank,
-            team_id=team_id,
-            family_id=family_id,
-            attempt=attempt,
-        )
-        for family_id in sorted(variants_by_family)
-    )
-    difficulty_counts = Counter(variant.difficulty for variant in suite)
-    if dict(difficulty_counts) != DIFFICULTY_COUNTS:
-        raise ValueError(
-            "Hidden suite assignment must preserve the 10/30/10 difficulty mix."
-        )
-    return suite
 
 
 def _read_bank_payload(path: Path) -> _BankPayload:
     try:
         raw_payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise ValueError(f"Hidden bank domain file not found: {path}") from exc
+        raise ValueError(f"Evaluation bank domain file not found: {path}") from exc
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Hidden bank domain file is invalid JSON: {path}") from exc
+        raise ValueError(
+            f"Evaluation bank domain file is invalid JSON: {path}"
+        ) from exc
 
     try:
         return _BankPayload.model_validate(raw_payload)
     except ValidationError as exc:
         messages = "; ".join(error["msg"] for error in exc.errors())
         raise ValueError(
-            f"Hidden bank domain file failed schema validation: {messages}"
+            f"Evaluation bank domain file failed schema validation: {messages}"
         ) from exc
 
 
-def _parse_hidden_bank(raw_payload: object, public_directory: Path) -> HiddenBank:
+def _parse_evaluation_bank(
+    raw_payload: object, public_directory: Path
+) -> EvaluationBank:
     try:
         payload = _BankPayload.model_validate(raw_payload)
     except ValidationError as exc:
-        raise ValueError("Hidden bank failed schema validation.") from exc
+        raise ValueError("Evaluation bank failed schema validation.") from exc
 
-    variants = tuple(
+    cases = tuple(
         sorted(
-            (_build_variant(variant) for variant in payload.variants),
-            key=lambda variant: (variant.family_id, variant.slot),
+            (_build_case(case_payload) for case_payload in payload.cases),
+            key=lambda case: case.case_id,
         )
     )
-    bank = HiddenBank(
+    bank = EvaluationBank(
         schema_version=payload.schema_version,
         dataset_version=payload.dataset_version,
         rubric_version=payload.rubric_version,
-        variants=variants,
+        cases=cases,
     )
-    _validate_hidden_bank(bank, load_public_cases(public_directory))
+    _validate_evaluation_bank(bank, public_directory=public_directory)
     return bank
 
 
-def _build_variant(payload: _VariantPayload) -> HiddenVariant:
-    return HiddenVariant(
-        variant_id=payload.variant_id,
-        family_id=payload.family_id,
-        slot=payload.slot,
+def _build_case(payload: _CasePayload) -> EvaluationCase:
+    return EvaluationCase(
+        case_id=payload.case_id,
+        partition=payload.partition,
         domain=payload.domain,
         difficulty=payload.difficulty,
-        archetype=payload.archetype,
         question=payload.question,
         context_files=payload.context_files,
-        reference=HiddenReference(
+        reference=EvaluationReference(
             answer=payload.reference.answer,
             citations=tuple(payload.reference.citations),
             escalate=payload.reference.escalate,
             key_points=tuple(payload.reference.key_points),
         ),
-        rubric=HiddenRubric(
+        rubric=EvaluationRubric(
             required_citation_groups=tuple(
                 tuple(group) for group in payload.rubric.required_citation_groups
             ),
@@ -382,106 +335,127 @@ def _build_variant(payload: _VariantPayload) -> HiddenVariant:
     )
 
 
-def _validate_hidden_bank(
-    bank: HiddenBank, public_cases: tuple[PublicCase, ...]
-) -> None:
-    public_cases_by_id = {case.id: case for case in public_cases}
-    if len(public_cases_by_id) != len(public_cases):
+def _validate_evaluation_bank(bank: EvaluationBank, public_directory: Path) -> None:
+    public_cases = load_public_cases(public_directory)
+    public_questions = {_normalize_text(case.question) for case in public_cases}
+    public_domains = {case.domain for case in public_cases}
+
+    if len(bank.cases) != 50:
+        raise ValueError("Evaluation bank must contain exactly 50 cases.")
+
+    case_ids = {case.case_id for case in bank.cases}
+    if len(case_ids) != len(bank.cases):
+        raise ValueError("Evaluation bank must contain unique case IDs.")
+
+    normalized_questions: set[str] = set()
+    partition_counts = Counter(case.partition for case in bank.cases)
+    if dict(partition_counts) != PARTITION_COUNTS:
         raise ValueError(
-            "Public cases must contain unique IDs before hidden validation."
+            "Evaluation bank must contain 40 discovery and 10 holdout cases."
         )
 
-    if len(bank.variants) != len(public_cases) * EXPECTED_VARIANTS_PER_FAMILY:
-        raise ValueError("Hidden bank must contain exactly 400 variants.")
+    domain_counts = Counter(case.domain for case in bank.cases)
+    if set(domain_counts) != public_domains:
+        raise ValueError(
+            "Evaluation bank domains must match the public practice domains."
+        )
+    if any(count != EXPECTED_CASES_PER_DOMAIN for count in domain_counts.values()):
+        raise ValueError("Evaluation bank must contain exactly five cases per domain.")
 
-    family_slots: dict[str, set[int]] = {}
-    variants_by_id: dict[str, HiddenVariant] = {}
-    normalized_questions: set[str] = set()
-    family_ids = set(public_cases_by_id)
-    variant_ids = {variant.variant_id for variant in bank.variants}
+    holdout_domain_counts = Counter(
+        case.domain for case in bank.cases if case.partition == "holdout"
+    )
+    if set(holdout_domain_counts) != public_domains or any(
+        count != EXPECTED_HOLDOUTS_PER_DOMAIN
+        for count in holdout_domain_counts.values()
+    ):
+        raise ValueError("Evaluation bank must contain exactly one holdout per domain.")
 
-    if len(variant_ids) != len(bank.variants):
-        raise ValueError("Hidden bank must contain unique variant IDs.")
-    if family_ids & variant_ids:
-        raise ValueError("Hidden variant IDs must stay disjoint from family IDs.")
+    difficulty_counts = Counter(case.difficulty for case in bank.cases)
+    if dict(difficulty_counts) != DIFFICULTY_COUNTS:
+        raise ValueError("Evaluation bank must preserve the 10/30/10 difficulty mix.")
 
-    for variant in bank.variants:
-        public_case = public_cases_by_id.get(variant.family_id)
-        if public_case is None:
+    allowed_difficulties = set(DIFFICULTY_COUNTS)
+    for case in bank.cases:
+        if case.difficulty not in allowed_difficulties:
             raise ValueError(
-                f"Hidden variant references unknown family ID: {variant.family_id}"
-            )
-        if variant.domain != public_case.domain:
-            raise ValueError(
-                f"Hidden variant {variant.variant_id} uses the wrong domain."
-            )
-        if variant.difficulty != public_case.difficulty:
-            raise ValueError(
-                f"Hidden variant {variant.variant_id} uses the wrong difficulty."
-            )
-        if set(variant.context_files) != set(public_case.context_files):
-            raise ValueError(
-                f"Hidden variant {variant.variant_id} includes undisclosed context."
+                f"Evaluation case {case.case_id} uses an unknown difficulty."
             )
 
-        question_key = _normalize_text(variant.question)
+        question_key = _normalize_text(case.question)
         if question_key in normalized_questions:
-            raise ValueError("Hidden bank contains duplicate question text.")
+            raise ValueError("Evaluation bank contains duplicate question text.")
+        if question_key in public_questions:
+            raise ValueError(
+                f"Evaluation case {case.case_id} reuses a public practice question."
+            )
         normalized_questions.add(question_key)
 
-        _validate_evidence_ids(
-            evidence_ids=variant.reference.citations,
-            allowed_ids=public_case.evidence_ids,
-            label=f"Hidden variant {variant.variant_id} reference has unknown citation IDs",
+        evidence_ids = _load_context_evidence_ids(
+            public_directory=public_directory,
+            case_id=case.case_id,
+            context_files=case.context_files,
         )
-        for group in variant.rubric.required_citation_groups:
+        _validate_evidence_ids(
+            evidence_ids=case.reference.citations,
+            allowed_ids=evidence_ids,
+            label=(
+                f"Evaluation case {case.case_id} reference has unknown citation IDs"
+            ),
+        )
+        for group in case.rubric.required_citation_groups:
             _validate_evidence_ids(
                 evidence_ids=group,
-                allowed_ids=public_case.evidence_ids,
+                allowed_ids=evidence_ids,
                 label=(
-                    f"Hidden variant {variant.variant_id} rubric has unknown citation IDs"
+                    f"Evaluation case {case.case_id} rubric has unknown citation IDs"
                 ),
             )
         _validate_evidence_ids(
-            evidence_ids=variant.rubric.non_authoritative_evidence,
-            allowed_ids=public_case.evidence_ids,
+            evidence_ids=case.rubric.non_authoritative_evidence,
+            allowed_ids=evidence_ids,
             label=(
-                f"Hidden variant {variant.variant_id} rubric has unknown non-authoritative evidence IDs"
+                "Evaluation case "
+                f"{case.case_id} rubric has unknown non-authoritative evidence IDs"
             ),
         )
 
-        family_slots.setdefault(variant.family_id, set()).add(variant.slot)
-        variants_by_id[variant.variant_id] = variant
 
-    for family_id in sorted(public_cases_by_id):
-        slots = family_slots.get(family_id)
-        if slots != set(range(1, EXPECTED_VARIANTS_PER_FAMILY + 1)):
+def _load_context_evidence_ids(
+    public_directory: Path, case_id: str, context_files: tuple[str, str]
+) -> frozenset[str]:
+    public_root = public_directory.resolve()
+    context_parts: list[str] = []
+    for relative_path in context_files:
+        resolved_path = (public_root / relative_path).resolve()
+        if not resolved_path.is_relative_to(public_root):
             raise ValueError(
-                f"Hidden family {family_id} must define slots 1 through 8 exactly once."
+                f"Evaluation case {case_id} contains a context path outside the dataset."
             )
+        try:
+            content = resolved_path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"Evaluation case {case_id} references an unknown context file: {relative_path}"
+            ) from exc
+        if not content:
+            raise ValueError(
+                f"Evaluation case {case_id} context is empty: {relative_path}"
+            )
+        context_parts.append(content)
 
-    sample_team_id = "validation-team"
-    seen_variant_ids: set[str] = set()
-    for attempt in range(1, EXPECTED_VARIANTS_PER_FAMILY + 1):
-        suite = build_attempt_suite(bank, team_id=sample_team_id, attempt=attempt)
-        if len(suite) != len(public_cases):
-            raise ValueError(
-                "Hidden suite assignment must contain 50 variants per attempt."
-            )
-        suite_variant_ids = {variant.variant_id for variant in suite}
-        if len(suite_variant_ids) != len(public_cases):
-            raise ValueError(
-                "Hidden suite assignment must not repeat variants in one attempt."
-            )
-        if seen_variant_ids & suite_variant_ids:
-            raise ValueError(
-                "Hidden suite assignment must not repeat variants for a team."
-            )
-        seen_variant_ids.update(suite_variant_ids)
+    evidence_ids = frozenset(
+        INLINE_EVIDENCE_ID_PATTERN.findall("\n\n".join(context_parts))
+    )
+    if not evidence_ids:
+        raise ValueError(f"Evaluation case {case_id} has no evidence IDs in context.")
+    return evidence_ids
 
 
 def _validate_evidence_ids(
-    evidence_ids: Iterable[str], allowed_ids: frozenset[str], label: str
+    evidence_ids: Iterable[str],
+    allowed_ids: frozenset[str],
+    label: str,
 ) -> None:
     evidence_id_list = list(evidence_ids)
     if len(set(evidence_id_list)) != len(evidence_id_list):
@@ -493,20 +467,6 @@ def _validate_evidence_ids(
     unknown_ids = sorted(set(evidence_id_list) - allowed_ids)
     if unknown_ids:
         raise ValueError(f"{label}: {', '.join(unknown_ids)}")
-
-
-def _variants_by_family(bank: HiddenBank) -> dict[str, dict[int, HiddenVariant]]:
-    variants: dict[str, dict[int, HiddenVariant]] = {}
-    for variant in bank.variants:
-        family_variants = variants.setdefault(variant.family_id, {})
-        family_variants[variant.slot] = variant
-    return variants
-
-
-def _stable_offset(team_id: str, family_id: str) -> int:
-    seed = f"{team_id}\0{family_id}".encode("utf-8")
-    digest = hashlib.sha256(seed).digest()
-    return int.from_bytes(digest[:8], "big") % EXPECTED_VARIANTS_PER_FAMILY
 
 
 def _normalize_text(value: str) -> str:
@@ -525,7 +485,7 @@ def _validate_output_path(
 
     if len(repository_roots) > 1:
         raise ValueError(
-            "Refusing to write hidden bank output through a nested Git repository path."
+            "Refusing to write evaluation bank output through a nested Git repository path."
         )
 
     if repository_root is not None and repository_root.resolve() != discovered_root:
@@ -538,10 +498,10 @@ def _validate_output_path(
     return discovered_root
 
 
-def _write_hidden_bank(path: Path, bank: HiddenBank) -> None:
+def _write_evaluation_bank(path: Path, bank: EvaluationBank) -> None:
     absolute_path = _absolute_path(path)
     absolute_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = _serialize_hidden_bank(bank)
+    payload = _serialize_evaluation_bank(bank)
     descriptor = _open_descriptor_anchored_file(absolute_path)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, indent=2))
@@ -550,20 +510,22 @@ def _write_hidden_bank(path: Path, bank: HiddenBank) -> None:
 
 def _open_descriptor_anchored_file(path: Path) -> int:
     if not SUPPORTS_NOFOLLOW:
-        raise ValueError("Safe hidden bank writes require O_NOFOLLOW support.")
+        raise ValueError("Safe evaluation bank writes require O_NOFOLLOW support.")
     if not SUPPORTS_DIR_FD:
-        raise ValueError("Safe hidden bank writes require dir_fd support.")
+        raise ValueError("Safe evaluation bank writes require dir_fd support.")
     if not SUPPORTS_FCHMOD:
-        raise ValueError("Safe hidden bank writes require fchmod support.")
+        raise ValueError("Safe evaluation bank writes require fchmod support.")
 
     parent_directory = path.parent
     parent_directory.mkdir(parents=True, exist_ok=True)
 
     try:
-        parent_fd = os.open(parent_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        parent_fd = os.open(
+            parent_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        )
     except OSError as exc:
         raise ValueError(
-            "Refusing to write hidden bank output through a non-regular parent directory."
+            "Refusing to write evaluation bank output through a non-regular parent directory."
         ) from exc
 
     try:
@@ -572,14 +534,14 @@ def _open_descriptor_anchored_file(path: Path) -> int:
     except OSError as exc:
         os.close(parent_fd)
         raise ValueError(
-            "Refusing to write hidden bank output because the final path component is unsafe."
+            "Refusing to write evaluation bank output because the final path component is unsafe."
         ) from exc
 
     try:
         file_stat = os.fstat(descriptor)
         if not stat.S_ISREG(file_stat.st_mode):
             raise ValueError(
-                "Refusing to write hidden bank output because the target is not a regular file."
+                "Refusing to write evaluation bank output because the target is not a regular file."
             )
         os.fchmod(descriptor, 0o600)
     except Exception:
@@ -591,42 +553,37 @@ def _open_descriptor_anchored_file(path: Path) -> int:
     return descriptor
 
 
-def _serialize_hidden_bank(bank: HiddenBank) -> dict[str, object]:
-    variants = sorted(
-        bank.variants, key=lambda variant: (variant.family_id, variant.slot)
-    )
+def _serialize_evaluation_bank(bank: EvaluationBank) -> dict[str, object]:
     return {
         "schema_version": bank.schema_version,
         "dataset_version": bank.dataset_version,
         "rubric_version": bank.rubric_version,
-        "variants": [
+        "cases": [
             {
-                "variant_id": variant.variant_id,
-                "family_id": variant.family_id,
-                "slot": variant.slot,
-                "domain": variant.domain,
-                "difficulty": variant.difficulty,
-                "archetype": variant.archetype,
-                "question": variant.question,
-                "context_files": list(variant.context_files),
+                "case_id": case.case_id,
+                "partition": case.partition,
+                "domain": case.domain,
+                "difficulty": case.difficulty,
+                "question": case.question,
+                "context_files": list(case.context_files),
                 "reference": {
-                    "answer": variant.reference.answer,
-                    "citations": list(variant.reference.citations),
-                    "escalate": variant.reference.escalate,
-                    "key_points": list(variant.reference.key_points),
+                    "answer": case.reference.answer,
+                    "citations": list(case.reference.citations),
+                    "escalate": case.reference.escalate,
+                    "key_points": list(case.reference.key_points),
                 },
                 "rubric": {
                     "required_citation_groups": [
-                        list(group) for group in variant.rubric.required_citation_groups
+                        list(group) for group in case.rubric.required_citation_groups
                     ],
-                    "required_points": list(variant.rubric.required_points),
-                    "prohibited_claims": list(variant.rubric.prohibited_claims),
+                    "required_points": list(case.rubric.required_points),
+                    "prohibited_claims": list(case.rubric.prohibited_claims),
                     "non_authoritative_evidence": list(
-                        variant.rubric.non_authoritative_evidence
+                        case.rubric.non_authoritative_evidence
                     ),
                 },
             }
-            for variant in variants
+            for case in sorted(bank.cases, key=lambda case: case.case_id)
         ],
     }
 
@@ -679,25 +636,33 @@ def _assert_output_path_is_ignored(
         text=True,
     )
     if completed.returncode == 128:
-        raise ValueError("Unable to validate hidden bank output path against git.")
+        raise ValueError("Unable to validate evaluation bank output path against git.")
     if completed.returncode not in {0, 1}:
-        raise ValueError("Unable to validate hidden bank output path against git.")
+        raise ValueError("Unable to validate evaluation bank output path against git.")
 
     output_lines = [line for line in completed.stdout.splitlines() if line]
     if not output_lines:
-        raise ValueError("Hidden bank output path is not ignored by the repository.")
+        raise ValueError(
+            "Evaluation bank output path is not ignored by the repository."
+        )
 
     last_line = output_lines[-1]
-    prefix, _, _pathname = last_line.partition("\t")
-    if not _pathname:
-        raise ValueError("Hidden bank output path is not ignored by the repository.")
+    prefix, _, pathname = last_line.partition("\t")
+    if not pathname:
+        raise ValueError(
+            "Evaluation bank output path is not ignored by the repository."
+        )
 
     source, line_number, pattern = prefix.split(":", 2)
     if source == "" and line_number == "" and pattern == "":
-        raise ValueError("Hidden bank output path is not ignored by the repository.")
+        raise ValueError(
+            "Evaluation bank output path is not ignored by the repository."
+        )
     if pattern.startswith("!"):
         raise ValueError(
-            "Hidden bank output path is only matched by a negated ignore rule."
+            "Evaluation bank output path is only matched by a negated ignore rule."
         )
     if completed.returncode != 0:
-        raise ValueError("Hidden bank output path is not ignored by the repository.")
+        raise ValueError(
+            "Evaluation bank output path is not ignored by the repository."
+        )

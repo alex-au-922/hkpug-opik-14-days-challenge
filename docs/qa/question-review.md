@@ -1,20 +1,20 @@
-# Hidden Question Human Fairness Review
+# Evaluation Bank Human Fairness Review
 
-No hidden question content has been reviewed or approved yet.
+No private evaluation case content is reproduced here, and this document makes no approval claim about unpublished case text.
 
-This review ledger is the human gate for hidden-bank fairness. It records reviewer decisions once real hidden variants exist, and it must stay conservative until then.
+This review ledger is the human gate for evaluation-bank fairness. Validators prove structural consistency only. The semantic truth of every private reference answer and rubric requires two human reviews before encryption or production scoring.
 
 ## Review Rules
 
-1. Review each hidden variant independently against its public family context.
-2. Confirm the question can be answered from listed public context alone, with no undisclosed facts.
-3. Confirm the reference answer is under 100 words and supported by listed evidence.
-4. Confirm syntactic validators prove field presence and type, including that `non_authoritative_evidence` IDs exist; human review proves semantic correctness and that the evidence is truly non-authoritative.
-5. Confirm `reference.escalate` is the authoritative escalation state for the variant.
-6. Leave every row `Pending` until two reviewers agree the variant is fair or reject it for revision.
+1. Review each private evaluation case independently against its listed public context.
+2. Confirm the question can be answered from the listed public evidence alone, with no undisclosed facts or agent-only discovery.
+3. Confirm the reference answer is under 100 words and every cited claim is semantically supported by the listed evidence.
+4. Confirm the rubric's `required_citation_groups`, `required_points`, `prohibited_claims`, and `non_authoritative_evidence` reflect the intended scoring behavior. Validators prove structural consistency only; reviewers own semantic correctness.
+5. Confirm `reference.escalate` is the authoritative escalation state for the case.
+6. Leave every row `Pending` until two human reviews agree the case is fair or reject it for revision.
 
 ## Review Ledger
 
-| Variant ID | Reviewer | Severity | Disposition | Status | Notes |
+| Case ID | Reviewer | Severity | Disposition | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| _TBD after hidden variants exist_ | _Unassigned_ | _N/A_ | _No content yet_ | Pending | This file intentionally makes no approval claim before hidden content exists. |
+| _TBD after private evaluation cases exist_ | _Unassigned_ | _N/A_ | _No content yet_ | Pending | This file intentionally records process requirements without reproducing private case text. |
