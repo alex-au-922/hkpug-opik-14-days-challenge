@@ -184,3 +184,93 @@ No ignored secret/plaintext paths are tracked.
   key/cert with private keys only under ignored `.local/`.
 - Tracked the tournament CA cert, scorer cert, organizer-test cert, and an
   allowlist entry pinned to the organizer-test certificate fingerprint.
+
+## Security Review Fix
+
+Date: 2026-07-12
+
+### Red
+
+Command:
+
+```sh
+uv run pytest tests/test_submission.py -q
+```
+
+Observed result after adding the security-review regressions:
+
+```text
+24 failed, 8 passed in 18.15s
+```
+
+The failures covered missing trusted scorer CMS recipient checks, multiple CMS
+recipient acceptance, missing scorer certificate chain/validity/identity/key
+usage checks, unbounded pre-read file handling, symlink acceptance, traceback
+CLI errors, and group/world-readable private key acceptance.
+
+### Green
+
+Command:
+
+```sh
+uv run pytest tests/test_submission.py -q
+```
+
+Observed output:
+
+```text
+................................                                         [100%]
+32 passed in 18.58s
+```
+
+### Implementation Summary
+
+- Split the former 603-line `src/hkpug_challenge/submission.py` into:
+  `submission_manifest.py` for manifest/canonical JSON and allowlist loading,
+  `submission_crypto.py` for certificate/CMS/OpenSSL/private-key handling, and a
+  thinner `submission.py` orchestration/CLI module with compatibility exports.
+- Added bounded regular-file reads before consuming manifests, signatures,
+  allowlists, certificates, ciphertext, prompt text, and private keys. Symlinks
+  are rejected before final-path reads.
+- Validates tournament CA properties, certificate validity windows, leaf
+  non-CA status, scorer identity `HKPUG Scorer`, scorer key encipherment, team
+  identity/key usage, and CA signatures before CMS decrypt.
+- Parses DER CMS metadata to require exactly one recipient whose issuer/serial
+  matches the trusted scorer certificate and requires AES-256-CBC.
+- Decrypts CMS to a temporary file, size-checks plaintext at 8192 bytes before
+  reading, and no longer captures plaintext from stdout.
+- Rejects group/world-readable private key files on POSIX mode platforms.
+- CLI validation failures now print concise `error: ...` messages without
+  Python tracebacks.
+
+### Verification
+
+Commands that passed:
+
+```sh
+uv run pytest tests/test_submission.py -q
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+uv run ruff format --check src/hkpug_challenge/submission.py src/hkpug_challenge/submission_crypto.py src/hkpug_challenge/submission_manifest.py tests/test_submission.py
+uv run pyright
+uv run pyright src/hkpug_challenge/submission.py src/hkpug_challenge/submission_crypto.py src/hkpug_challenge/submission_manifest.py tests/test_submission.py
+openssl verify -CAfile .github/tournament/public_keys/tournament_ca_cert.pem .github/tournament/public_keys/scorer_cert.pem .github/tournament/public_keys/organizer-test_cert.pem
+git grep -n "BEGIN .*PRIVATE KEY" -- . ':(exclude).local' ':(exclude).superpowers/sdd/task-2-report.md'
+git ls-files | rg '(^|/)(\.local/|submission/prompt\.txt$)'
+```
+
+Observed highlights:
+
+```text
+32 passed in 18.58s
+54 passed in 18.11s
+All checks passed!
+13 files already formatted
+0 errors, 0 warnings, 0 informations
+.github/tournament/public_keys/scorer_cert.pem: OK
+.github/tournament/public_keys/organizer-test_cert.pem: OK
+```
+
+The two `git grep`/`git ls-files | rg` scans produced no matches after excluding
+the report text that documents the private-key scan command.
