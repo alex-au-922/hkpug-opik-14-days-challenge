@@ -14,7 +14,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from hkpug_challenge.submission import canonical_manifest_bytes, verify_submission
+from hkpug_challenge.submission import (
+    canonical_manifest_bytes,
+    read_bounded_regular_file,
+    verify_submission,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -973,6 +977,134 @@ def test_verify_submission_rejects_symlinked_manifest(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="regular file"):
         verify_paths(paths)
+
+
+def test_read_bounded_regular_file_uses_open_descriptor_after_metadata_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "submission.bin"
+    original_content = b"original submission bytes"
+    swapped_content = b"swapped submission bytes"
+    path.write_bytes(original_content)
+    original_lstat = Path.lstat
+    original_fstat = os.fstat
+    replaced = False
+
+    def replace_path_once() -> None:
+        nonlocal replaced
+        if replaced:
+            return
+        replaced = True
+        path.unlink()
+        path.write_bytes(swapped_content)
+
+    def racing_lstat(self: Path) -> os.stat_result:
+        result = original_lstat(self)
+        if self == path:
+            replace_path_once()
+        return result
+
+    def racing_fstat(file_descriptor: int) -> os.stat_result:
+        result = original_fstat(file_descriptor)
+        replace_path_once()
+        return result
+
+    monkeypatch.setattr(Path, "lstat", racing_lstat)
+    monkeypatch.setattr(os, "fstat", racing_fstat)
+
+    assert read_bounded_regular_file(path, "Race test", 64) == original_content
+    assert path.read_bytes() == swapped_content
+
+
+def test_read_bounded_regular_file_rejects_growth_after_metadata_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "submission.bin"
+    path.write_bytes(b"small")
+    original_lstat = Path.lstat
+    original_fstat = os.fstat
+    grew = False
+
+    def grow_path_once() -> None:
+        nonlocal grew
+        if grew:
+            return
+        grew = True
+        with path.open("ab") as file:
+            file.write(b"x" * 100)
+
+    def racing_lstat(self: Path) -> os.stat_result:
+        result = original_lstat(self)
+        if self == path:
+            grow_path_once()
+        return result
+
+    def racing_fstat(file_descriptor: int) -> os.stat_result:
+        result = original_fstat(file_descriptor)
+        grow_path_once()
+        return result
+
+    monkeypatch.setattr(Path, "lstat", racing_lstat)
+    monkeypatch.setattr(os, "fstat", racing_fstat)
+
+    with pytest.raises(ValueError, match="too large"):
+        read_bounded_regular_file(path, "Race test", 16)
+
+
+def test_verify_submission_uses_same_ciphertext_bytes_for_inspection_and_decryption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hkpug_challenge.submission as submission_module
+
+    paths = create_submission(tmp_path, "Original prompt.")
+    swapped_prompt_path = tmp_path / "swapped-prompt.txt"
+    swapped_ciphertext_path = tmp_path / "swapped-prompt.txt.cms"
+    swapped_prompt_path.write_text("Swapped prompt.", encoding="utf-8")
+    run_checked(
+        [
+            "openssl",
+            "cms",
+            "-encrypt",
+            "-binary",
+            "-aes-256-cbc",
+            "-in",
+            str(swapped_prompt_path),
+            "-outform",
+            "DER",
+            "-out",
+            str(swapped_ciphertext_path),
+            str(paths["scorer_cert_path"]),
+        ],
+        cwd=tmp_path,
+    )
+    swapped_ciphertext = swapped_ciphertext_path.read_bytes()
+    original_inspect_ciphertext = submission_module.inspect_ciphertext
+
+    def racing_inspect_ciphertext(
+        ciphertext: Any,
+        scorer_certificate: x509.Certificate,
+    ) -> None:
+        original_inspect_ciphertext(ciphertext, scorer_certificate)
+        paths["ciphertext_path"].write_bytes(swapped_ciphertext)
+
+    monkeypatch.setattr(
+        submission_module,
+        "inspect_ciphertext",
+        racing_inspect_ciphertext,
+    )
+
+    result = verify_submission(
+        submission_dir=paths["submission_directory"],
+        allowlist_path=paths["allowlist_path"],
+        tournament_ca_cert_path=paths["ca_cert_path"],
+        scorer_private_key_path=paths["scorer_key_path"],
+        scorer_cert_path=paths["scorer_cert_path"],
+    )
+
+    assert result.prompt_text == "Original prompt."
 
 
 def test_verify_submission_passes_openssl_snapshots_to_decryption(

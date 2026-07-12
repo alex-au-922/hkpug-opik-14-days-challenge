@@ -14,7 +14,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import NameOID
 
-from hkpug_challenge.submission_manifest import read_bounded_regular_file
+from hkpug_challenge.submission_manifest import (
+    read_bounded_regular_file,
+    read_bounded_regular_file_snapshot,
+)
 
 
 EXPECTED_SCORER_COMMON_NAME = "HKPUG Scorer"
@@ -32,6 +35,10 @@ def load_certificate(certificate_path: Path) -> x509.Certificate:
         "Certificate",
         MAX_CERTIFICATE_BYTES,
     )
+    return load_certificate_bytes(certificate_bytes)
+
+
+def load_certificate_bytes(certificate_bytes: bytes) -> x509.Certificate:
     try:
         return x509.load_pem_x509_certificate(certificate_bytes)
     except ValueError as exc:
@@ -132,13 +139,8 @@ def verify_manifest_signature(
 
 
 def inspect_ciphertext(
-    ciphertext_path: Path, scorer_certificate: x509.Certificate
+    ciphertext_bytes: bytes, scorer_certificate: x509.Certificate
 ) -> None:
-    ciphertext_bytes = read_bounded_regular_file(
-        ciphertext_path,
-        "Prompt ciphertext",
-        MAX_CIPHERTEXT_BYTES,
-    )
     try:
         content_info: Any = _CMS.ContentInfo.load(ciphertext_bytes, strict=True)
         if content_info["content_type"].native != "enveloped_data":
@@ -191,23 +193,10 @@ def inspect_ciphertext(
 
 def decrypt_ciphertext(
     *,
-    ciphertext_path: Path,
-    scorer_private_key_path: Path,
-    scorer_cert_path: Path,
+    ciphertext_bytes: bytes,
+    scorer_private_key_bytes: bytes,
+    scorer_cert_bytes: bytes,
 ) -> bytes:
-    ciphertext_bytes = read_bounded_regular_file(
-        ciphertext_path,
-        "Prompt ciphertext",
-        MAX_CIPHERTEXT_BYTES,
-    )
-    private_key_bytes = read_private_key_file(
-        scorer_private_key_path, "Scorer private key"
-    )
-    certificate_bytes = read_bounded_regular_file(
-        scorer_cert_path,
-        "Certificate",
-        MAX_CERTIFICATE_BYTES,
-    )
     with tempfile.TemporaryDirectory() as temp_directory_name:
         temp_directory = Path(temp_directory_name)
         if os.name != "nt":
@@ -216,10 +205,10 @@ def decrypt_ciphertext(
             temp_directory, "ciphertext.der", ciphertext_bytes
         )
         snapshot_private_key_path = _write_private_snapshot(
-            temp_directory, "private_key.pem", private_key_bytes
+            temp_directory, "private_key.pem", scorer_private_key_bytes
         )
         snapshot_certificate_path = _write_private_snapshot(
-            temp_directory, "certificate.pem", certificate_bytes
+            temp_directory, "certificate.pem", scorer_cert_bytes
         )
         plaintext_path = temp_directory / "plaintext.txt"
         result = subprocess.run(
@@ -260,14 +249,14 @@ def decrypt_ciphertext(
 
 
 def read_private_key_file(private_key_path: Path, label: str) -> bytes:
-    key_bytes = read_bounded_regular_file(
+    key_snapshot = read_bounded_regular_file_snapshot(
         private_key_path,
         label,
         MAX_PRIVATE_KEY_BYTES,
     )
-    if os.name != "nt" and private_key_path.stat().st_mode & 0o077:
+    if os.name != "nt" and key_snapshot.mode & 0o077:
         raise ValueError(f"{label} file must not be group- or world-readable.")
-    return key_bytes
+    return key_snapshot.content
 
 
 def load_rsa_private_key(private_key_path: Path) -> rsa.RSAPrivateKey:

@@ -20,7 +20,9 @@ from hkpug_challenge.submission_crypto import (
     decrypt_ciphertext,
     inspect_ciphertext,
     load_certificate,
+    load_certificate_bytes,
     load_rsa_private_key,
+    read_private_key_file,
     require_allowlist_digest,
     require_scorer_identity,
     require_scorer_key_usage,
@@ -83,6 +85,7 @@ __all__ = [
     "inspect_ciphertext",
     "load_allowlist",
     "load_certificate",
+    "load_certificate_bytes",
     "load_manifest_file",
     "load_manifest_signature",
     "load_prompt_text",
@@ -221,9 +224,35 @@ def verify_submission(
     team_cert_path = resolve_allowlisted_cert_path(
         allowlist_path, allowlist_entry.cert_path
     )
-    team_certificate = load_certificate(team_cert_path)
-    tournament_ca_certificate = load_certificate(tournament_ca_cert_path)
-    scorer_certificate = load_certificate(scorer_cert_path)
+    team_certificate = load_certificate_bytes(
+        read_bounded_regular_file(
+            team_cert_path,
+            "Certificate",
+            MAX_CERTIFICATE_BYTES,
+        )
+    )
+    tournament_ca_certificate = load_certificate_bytes(
+        read_bounded_regular_file(
+            tournament_ca_cert_path,
+            "Certificate",
+            MAX_CERTIFICATE_BYTES,
+        )
+    )
+    scorer_certificate_bytes = read_bounded_regular_file(
+        scorer_cert_path,
+        "Certificate",
+        MAX_CERTIFICATE_BYTES,
+    )
+    scorer_certificate = load_certificate_bytes(scorer_certificate_bytes)
+    scorer_private_key_bytes = read_private_key_file(
+        scorer_private_key_path,
+        "Scorer private key",
+    )
+    ciphertext_bytes = read_bounded_regular_file(
+        ciphertext_path,
+        "Prompt ciphertext",
+        MAX_CIPHERTEXT_BYTES,
+    )
 
     require_allowlist_digest(team_certificate, allowlist_entry.cert_sha256)
     require_team_identity(team_certificate, manifest.team_id)
@@ -242,12 +271,12 @@ def verify_submission(
         ca_certificate=tournament_ca_certificate,
         label="Trusted scorer cert",
     )
-    inspect_ciphertext(ciphertext_path, scorer_certificate)
+    inspect_ciphertext(ciphertext_bytes, scorer_certificate)
 
     prompt_bytes = decrypt_ciphertext(
-        ciphertext_path=ciphertext_path,
-        scorer_private_key_path=scorer_private_key_path,
-        scorer_cert_path=scorer_cert_path,
+        ciphertext_bytes=ciphertext_bytes,
+        scorer_private_key_bytes=scorer_private_key_bytes,
+        scorer_cert_bytes=scorer_certificate_bytes,
     )
     try:
         prompt_text = prompt_bytes.decode("utf-8")

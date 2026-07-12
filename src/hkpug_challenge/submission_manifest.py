@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import errno
 import json
+import os
 import stat
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +25,12 @@ SIGNATURE_FILENAME = "manifest.sig"
 MAX_MANIFEST_BYTES = 4096
 MAX_SIGNATURE_BYTES = 8192
 MAX_ALLOWLIST_BYTES = 65536
+
+
+@dataclass(frozen=True)
+class RegularFileSnapshot:
+    content: bytes
+    mode: int
 
 
 class SubmissionManifest(BaseModel):
@@ -152,15 +161,53 @@ def canonical_manifest_bytes(manifest: SubmissionManifest | dict[str, Any]) -> b
 
 
 def read_bounded_regular_file(path: Path, label: str, max_bytes: int) -> bytes:
+    return read_bounded_regular_file_snapshot(path, label, max_bytes).content
+
+
+def read_bounded_regular_file_snapshot(
+    path: Path, label: str, max_bytes: int
+) -> RegularFileSnapshot:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is None:
+        raise ValueError(
+            "Atomic no-symlink file verification requires POSIX os.O_NOFOLLOW; "
+            "run untrusted submission verification on Linux, macOS, or WSL."
+        )
+
     try:
-        file_stat = path.lstat()
+        file_descriptor = os.open(path, os.O_RDONLY | nofollow)
     except FileNotFoundError as exc:
         raise ValueError(f"{label} file was not found.") from exc
-    if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
-        raise ValueError(f"{label} file must be a regular file.")
-    if file_stat.st_size > max_bytes:
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise ValueError(f"{label} file must be a regular file.") from exc
+        raise
+
+    try:
+        file_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise ValueError(f"{label} file must be a regular file.")
+        if file_stat.st_size > max_bytes:
+            raise ValueError(f"{label} file is too large.")
+        content = _read_at_most(file_descriptor, max_bytes + 1)
+    finally:
+        os.close(file_descriptor)
+
+    if len(content) > max_bytes:
         raise ValueError(f"{label} file is too large.")
-    return path.read_bytes()
+    return RegularFileSnapshot(content=content, mode=file_stat.st_mode)
+
+
+def _read_at_most(file_descriptor: int, byte_limit: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = byte_limit
+    while remaining > 0:
+        chunk = os.read(file_descriptor, min(remaining, 64 * 1024))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
 
 
 def load_manifest_file(manifest_path: Path) -> tuple[SubmissionManifest, bytes]:
