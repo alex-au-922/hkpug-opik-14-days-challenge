@@ -26,10 +26,11 @@ and encrypted attempt state to Pages and the scoring workflow.
 
 ## Trusted Workflow Ref
 
-Repository variable `ORGANIZER_REF` stores the exact organizer commit SHA used by
-participant validation, scoring, and playground workflows. Pull requests cannot
-choose this ref. Workflow code must never execute scorer code from a participant
-head SHA.
+Fork pull-request workflows cannot read repository variables, so participant
+validation hard-pins the reviewed organizer commit SHA directly in the trusted
+base workflow. Repository variable `ORGANIZER_REF` stores the same reviewed SHA
+for trusted scoring and playground workflows. Pull requests cannot choose either
+ref. Workflow code must never execute scorer code from a participant head SHA.
 
 Helper release workflows continue to check out exact `helper-vX.Y.Z` tags so release
 builds remain reproducible.
@@ -60,7 +61,8 @@ The participant tutorial must explain:
 
 - Python tests, Ruff, and Pyright pass on `organizer`.
 - Go tests and cross-platform helper builds pass on `organizer`.
-- Workflow tests require a trusted `ORGANIZER_REF` checkout.
+- Workflow tests require an immutable organizer SHA checkout and verify that fork
+  validation does not depend on repository variables.
 - `git ls-tree origin/main` shows no `.github/tournament` paths.
 - Validation, Pages, and helper release workflows remain registered on `main`.
 - The live Opik tutorial contains the 50/40/10 explanation.

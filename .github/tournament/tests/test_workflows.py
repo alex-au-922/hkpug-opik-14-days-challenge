@@ -14,6 +14,7 @@ PLAYGROUND_WORKFLOW = "playground-smoke.yml"
 PAGES_WORKFLOW = "deploy-pages.yml"
 HELPER_RELEASE_WORKFLOW = "release-helper.yml"
 SUBMISSION_PATHS = {"submission/submission.zip"}
+PINNED_ORGANIZER_REF = "1116c94c281fa5ac0a7771ae389076e237f966a2"
 
 
 def load_workflow(filename: str) -> str:
@@ -139,12 +140,14 @@ def workflow_name(text: str) -> str:
     return match.group(1).strip("'\"")
 
 
-def assert_organizer_ref_guard(text: str, checkout_name: str) -> None:
+def assert_organizer_ref_guard(
+    text: str, checkout_name: str, expected_ref: str = "${{ vars.ORGANIZER_REF }}"
+) -> None:
     guard = named_step(text, r"validate.*organizer.*ref")
     checkout = named_step(text, checkout_name)
 
     assert "uses: actions/checkout@" not in guard
-    assert "ORGANIZER_REF: ${{ vars.ORGANIZER_REF }}" in guard
+    assert f"ORGANIZER_REF: {expected_ref}" in guard
     assert re.search(
         r'\[\[\s+"\$ORGANIZER_REF"\s+=~\s+\^\[0-9a-f\]\{40\}\$\s+\]\]',
         guard,
@@ -197,10 +200,15 @@ def test_untrusted_validation_runs_trusted_base_code_only() -> None:
     text = load_workflow(VALIDATE_WORKFLOW)
     checkouts = checkout_steps(text)
 
-    assert_organizer_ref_guard(text, r"check out.*trusted.*base.*code")
+    assert_organizer_ref_guard(
+        text,
+        r"check out.*trusted.*base.*code",
+        expected_ref=PINNED_ORGANIZER_REF,
+    )
     assert checkouts, "Validation needs an explicit checkout of trusted base code"
     trusted_step = named_step(text, r"check out.*trusted.*base.*code")
-    assert "ref: ${{ vars.ORGANIZER_REF }}" in trusted_step
+    assert f"ref: {PINNED_ORGANIZER_REF}" in trusted_step
+    assert "vars.ORGANIZER_REF" not in trusted_step
     assert "github.event.pull_request.head" not in trusted_step
     assert re.search(r"(?m)^\s+persist-credentials:\s*false\s*$", trusted_step)
 

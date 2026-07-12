@@ -4,7 +4,7 @@
 
 **Goal:** Publish a participant-only `main` branch while retaining the trusted tournament implementation on `organizer` and documenting the 40-trace Opik feedback workflow.
 
-**Architecture:** The public repository uses `main` for participant material, `organizer` for trusted source and tests, and `leaderboard` for generated Pages/state. Main-branch workflows resolve trusted code through a maintainer-controlled immutable `ORGANIZER_REF` repository variable.
+**Architecture:** The public repository uses `main` for participant material, `organizer` for trusted source and tests, and `leaderboard` for generated Pages/state. Fork validation hard-pins a reviewed organizer SHA because GitHub withholds repository variables from fork pull-request workflows; trusted scoring and playground workflows use the maintainer-controlled `ORGANIZER_REF` variable.
 
 **Tech Stack:** Git branches, GitHub Actions, Python 3.10 with uv/pytest/Ruff/Pyright, Go, static HTML/CSS.
 
@@ -27,12 +27,12 @@
 - Test: `.github/tournament/tests/test_workflows.py`
 
 **Interfaces:**
-- Consumes: repository variable `ORGANIZER_REF` containing a 40-character commit SHA.
+- Consumes: a hard-pinned 40-character organizer SHA for fork validation and repository variable `ORGANIZER_REF` for trusted events.
 - Produces: trusted checkout at `trusted/` containing `.github/tournament` and `public`.
 
-- [ ] Add failing workflow tests requiring all trusted implementation checkouts to use `${{ vars.ORGANIZER_REF }}` and forbidding participant head refs.
+- [ ] Add failing workflow tests requiring immutable organizer SHAs and forbidding participant head refs.
 - [ ] Run `uv run --frozen pytest tests/test_workflows.py -q` and confirm the new assertions fail.
-- [ ] Update the three workflows to check out the repository at `${{ vars.ORGANIZER_REF }}` with credentials disabled.
+- [ ] Hard-pin the organizer SHA in fork validation; use `${{ vars.ORGANIZER_REF }}` in trusted scoring and playground workflows; disable persisted credentials.
 - [ ] Re-run the workflow tests and confirm they pass.
 - [ ] Commit with `fix: load trusted code from organizer ref`.
 
