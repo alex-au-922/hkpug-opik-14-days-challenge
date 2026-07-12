@@ -53,6 +53,18 @@ The production flow uses a versioned JSON bundle and documented Opik REST replay
 3. `PUT /api/v1/private/traces/feedback-scores`
 4. `PUT /api/v1/private/spans/feedback-scores`
 
-Each team receives only its consumed hidden cases, model outputs, spans, and score reasons. Reference answers, private rubrics, and unused variants are excluded.
+Each team receives the 40 discovery cases, model outputs, spans, and score reasons in its encrypted bundle. Reference answers, private rubrics, and all holdout case-level data are excluded until the tournament closes.
 
-This intentionally reveals consumed cases to the submitting team because diagnosis in Opik is the educational objective. The tournament accepts the residual risk that teams could share decrypted feedback. Mitigations are one-time variants per team, encrypted delivery, no expected answers, deterministic team/attempt assignment, an explicit no-sharing rule, and baseline normalization. Redacting case inputs would defeat the approved improvement workflow and is therefore rejected.
+This intentionally reveals discovery cases because diagnosis in Opik is the educational objective. The 10 fixed holdout cases preserve the tournament's generalization signal without requiring hundreds of variants.
+
+## Tournament Simplification Decision
+
+The earlier 400-variant design is superseded. It added authoring and calibration risk without improving the learning loop enough to justify the complexity.
+
+The official scorer uses one fixed private bank on all eight attempts:
+
+- 40 discovery cases with full encrypted Opik feedback after every run
+- 10 holdout cases, one per domain, with aggregate-only feedback until the tournament closes
+- final score: 75% discovery and 25% holdout
+
+This makes scores directly comparable, lets newcomers learn from real traces, and preserves a meaningful generalization signal for tournament ranking. Talks may teach investigation methods, but every scored answer must remain derivable from context supplied to the model.

@@ -4,25 +4,27 @@
 
 **Goal:** Ship a production GitHub tournament where teams submit encrypted prompts, receive eight hidden DeepSeek V4 Flash evaluations with encrypted Opik-compatible feedback, and follow scores on a live GitHub Pages dashboard.
 
-**Architecture:** An untrusted pull-request workflow validates a CMS-encrypted prompt and team-signed manifest without secrets. A separate trusted `workflow_run` verifies the triggering event, re-fetches the three allowed blobs from the immutable PR head SHA, verifies them again, atomically reserves an attempt, decrypts only prompt text and a frozen hidden suite, calls Fireworks, builds portable Opik REST payloads, encrypts the feedback bundle to the submitting team, updates an append-only leaderboard, and deploys static Pages. Public cases and local tooling teach the task; unused hidden variants, reference rubrics, decrypted prompts, and expected answers never enter logs or public artifacts.
+**Architecture:** An untrusted pull-request workflow validates a CMS-encrypted prompt and team-signed manifest without secrets. A separate trusted `workflow_run` verifies the triggering event, re-fetches the three allowed blobs from the immutable PR head SHA, verifies them again, atomically reserves an attempt, decrypts only prompt text and one frozen 50-case private bank, calls Fireworks, builds portable Opik REST payloads for the 40 discovery cases, encrypts that feedback to the submitting team, keeps the 10 holdout cases aggregate-only until the tournament closes, updates an append-only leaderboard, and deploys static Pages. Public practice cases and local tooling teach the task; private references, decrypted prompts, and holdout inputs never enter logs or public artifacts.
 
 **Tech Stack:** Python 3.10+, `uv`, `pydantic`, `pytest`, Fireworks OpenAI-compatible HTTP API, OpenSSL CMS/RSA signatures, Opik private REST payloads, GitHub Actions, GitHub Pages, static HTML/CSS/JavaScript
 
 ## Global Constraints
 
-- Exactly 50 public case families across ten support domains.
+- Exactly 50 public practice cases across ten support domains; these are not official scoring inputs.
+- Exactly 50 fixed private scoring cases: 40 discovery cases and 10 holdout cases.
 - Exactly eight total official scored attempts per team, idempotent by signed submission identity.
 - Use `accounts/fireworks/models/deepseek-v4-flash` for participant answers.
 - Send `reasoning_effort: "none"` on every DeepSeek V4 answer and judge request; the model defaults to reasoning mode and otherwise consumes the bounded output budget before emitting the required JSON.
 - Never commit Fireworks credentials, private keys, plaintext hidden cases, reference answers, or plaintext participant prompts.
 - Never execute participant-controlled code in any workflow, especially a secret-bearing workflow.
 - Only `submission/prompt.txt.cms`, `submission/manifest.json`, and `submission/manifest.sig` may change in a scoring PR.
-- Every scored attempt emits an encrypted, team-readable Opik replay bundle containing only that attempt's consumed cases and public aggregate scores without reference answers.
+- Every scored attempt emits an encrypted, team-readable Opik replay bundle containing the 40 discovery traces without reference answers. The 10 holdout inputs, outputs, spans, and reasons remain private until the tournament closes; only their aggregate criterion scores are returned.
 - Human participants must be able to understand every public case from supplied evidence; no answer may depend on agent-only discovery, trivia, or undisclosed conventions.
-- All scoring inputs, raw requests, raw responses, judge outputs, model metadata, parser version, rubric version, and suite assignment are stored in the encrypted run record so the recorded score can be replayed without another model call. A future model rerun is not authoritative.
+- All scoring inputs, raw requests, raw responses, judge outputs, model metadata, parser version, rubric version, and bank version are stored in the organizer's private run record so the recorded score can be replayed without another model call. A future model rerun is not authoritative.
 - A scored run is capped at 100 Fireworks calls, 800,000 estimated total input tokens, 256 answer tokens per case, 192 judge tokens per case, zero automatic model retries, and an 8 KiB participant prompt.
 - `SCORING_ENABLED` is a repository kill switch and must be true before an attempt can be reserved.
-- The public dashboard reports team best score, latest score, attempt count, run history, and criterion breakdown without exposing prompts or hidden cases.
+- The official score is `75% discovery + 25% holdout` and uses the same private cases on all eight attempts so run-to-run changes are directly comparable.
+- The public dashboard reports team best score, latest score, attempt count, run history, discovery score, aggregate holdout score, and criterion breakdown without exposing prompts or private cases.
 
 ---
 
@@ -104,46 +106,46 @@
 
   Expected: all valid and tamper tests pass.
 
-### Task 3: Hidden Suites And Fairness Validation
+### Task 3: Private Evaluation Bank And Fairness Validation
 
 **Files:**
-- Create: `src/hkpug_challenge/hidden.py`
-- Create: `scripts/build_hidden_bank.py`
-- Create: `scripts/encrypt_hidden_bank.sh`
-- Create: `.github/tournament/hidden_bank.json.cms`
-- Create locally only: `.local/hidden/domains/*.json`
-- Create: `tests/test_hidden_bank.py`
+- Create: `src/hkpug_challenge/evaluation_bank.py`
+- Create: `scripts/build_evaluation_bank.py`
+- Create: `scripts/encrypt_evaluation_bank.sh`
+- Create: `.github/tournament/evaluation_bank.json.cms`
+- Create locally only: `.local/evaluation/domains/*.json`
+- Create: `tests/test_evaluation_bank.py`
 - Create: `docs/qa/question-review.md`
 
 **Interfaces:**
-- Produces: eight frozen suites, each with one unused variant from every public family and a private reference rubric.
-- Consumes: ten domain files containing eight variants per family.
+- Produces: one frozen private bank with 40 discovery cases, 10 holdout cases, and private reference rubrics.
+- Consumes: ten private domain files containing five scored cases each.
 
-- [ ] **Step 1: Write failing hidden-bank invariants**
+- [ ] **Step 1: Write failing private-bank invariants**
 
-  Validate 400 unique variants, 50 per suite, eight per family, no repeated question text, valid context/evidence IDs, expected escalation, reference answer under 100 words, required/forbidden citation disjointness, and identical difficulty/domain distribution in all suites. Suite assignment is deterministic from team ID and attempt number and never repeats a variant for the same team.
+  Validate exactly 50 unique cases, five cases per domain, 40 `discovery` and 10 `holdout`, a 10/30/10 difficulty balance, one holdout per domain, unique text distinct from public practice questions, valid context/evidence IDs, expected escalation, and reference answers under 100 words. Every case is fixed across all eight attempts.
 
 - [ ] **Step 2: Run tests and verify missing hidden data failure**
 
-  Run: `uv run pytest tests/test_hidden_bank.py -q`
+  Run: `uv run pytest tests/test_evaluation_bank.py -q`
 
-- [ ] **Step 3: Author structured hidden variants by domain**
+- [ ] **Step 3: Author the private cases by domain**
 
-  Use controlled fact substitutions, boundary flips, missing-information escalation, stale authority, transaction state, incident state, untrusted instructions, and presentation changes. Do not generate scored variants at runtime.
+  Author five private cases in each domain. Four are discovery cases and one is a holdout case. Use boundary decisions, missing-information escalation, authority precedence, transaction/incident state, and untrusted instructions without copying public practice question wording. Do not generate scored cases at runtime.
 
 - [ ] **Step 4: Conduct two independent human-style reviews**
 
   Record case IDs, severity, disposition, and reviewer in `docs/qa/question-review.md`; fix every Critical or Important ambiguity before encryption.
 
-- [ ] **Step 5: Calibrate all suites**
+- [ ] **Step 5: Calibrate discovery and holdout partitions**
 
-  Run the frozen baseline and organizer reference prompt against every suite. Human-review every reference answer and require suite baseline means to remain within 3 percentage points of the overall baseline mean. Record raw and normalized score statistics without exposing private questions.
+  Run the frozen baseline and organizer reference prompt against the complete bank. Human-review every reference answer. Confirm the holdout difficulty mix and baseline mean do not make its 25% contribution dominate normal discovery improvements. Record aggregate calibration without exposing private questions.
 
 - [ ] **Step 6: Build and encrypt the frozen bank**
 
-  Run: `uv run python scripts/build_hidden_bank.py --input .local/hidden/domains --output .local/hidden/hidden_bank.json && scripts/encrypt_hidden_bank.sh`
+  Run: `uv run python scripts/build_evaluation_bank.py --input .local/evaluation/domains --output .local/evaluation/evaluation_bank.json && scripts/encrypt_evaluation_bank.sh`
 
-  Expected: only `.github/tournament/hidden_bank.json.cms` is tracked.
+  Expected: only `.github/tournament/evaluation_bank.json.cms` is tracked.
 
 ### Task 4: Fireworks Scoring And Portable Trace Bundle
 
@@ -157,7 +159,7 @@
 
 **Interfaces:**
 - Produces: answer calls, one structured judge call per answer, criterion scores, aggregate score, and Opik-compatible trace/span/feedback payloads.
-- Consumes: a decrypted prompt, one hidden suite, injected completion clients, immutable run metadata, and the previous leaderboard.
+- Consumes: a decrypted prompt, the fixed private evaluation bank, injected completion clients, immutable run metadata, and the previous leaderboard.
 
 - [ ] **Step 1: Write failing scoring tests with deterministic fake clients**
 
@@ -173,7 +175,7 @@
 
 - [ ] **Step 4: Build portable Opik payloads**
 
-  Bundle `trace_payload.json`, `span_payload.json`, `trace_feedback.json`, `span_feedback.json`, `run.json`, and `README.txt` in one deterministic archive. Include full input/output only for the fifty consumed variants so participants can diagnose their run. Exclude reference answers, private rubric fields, and every unused variant.
+  Bundle `trace_payload.json`, `span_payload.json`, `trace_feedback.json`, `span_feedback.json`, `run.json`, and `README.txt` in one deterministic archive. Include full inputs, outputs, spans, and score reasons only for the 40 discovery cases. Include aggregate holdout criterion scores without holdout inputs, outputs, per-case scores, or reasons. Exclude every reference answer and private rubric field.
 
 - [ ] **Step 5: Run scoring and bundle tests**
 
