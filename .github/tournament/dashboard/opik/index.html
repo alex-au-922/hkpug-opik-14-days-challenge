@@ -114,6 +114,28 @@ powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
         </ol>
       </section>
 
+      <section class="tutorial-section" aria-labelledby="scope-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">05</span>
+            <h2 id="scope-title">Understand the feedback scope</h2>
+          </div>
+          <p>Every scored attempt evaluates all 50 cases: 40 discovery cases and 10 holdout cases.</p>
+        </div>
+        <p>The bundle imports exactly 40 discovery traces. The 10 holdout cases never appear as traces; their results are aggregate-only.</p>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="anatomy-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">06</span>
+            <h2 id="anatomy-title">Read a discovery trace</h2>
+          </div>
+          <p>Each discovery trace has a <code>model.answer</code> span for the response and an <code>evaluation.judge</code> span for the evaluation.</p>
+        </div>
+        <p>Use the seven score columns to find a pattern: JSON schema, Citation validity, Evidence coverage, Escalation, Answer relevance, Instruction following, and Faithfulness.</p>
+      </section>
+
       <section class="next-route" aria-labelledby="next-title">
         <div>
           <h2 id="next-title">Ready for another run?</h2>

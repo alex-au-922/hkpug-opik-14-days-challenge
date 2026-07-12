@@ -122,6 +122,27 @@ def test_opik_tutorial_uses_only_public_helper_commands() -> None:
         assert noise not in html
 
 
+def test_opik_tutorial_explains_the_tournament_trace_contract() -> None:
+    html, _ = parse_page(OPIK / "index.html")
+
+    for text in (
+        "50 cases",
+        "40 discovery traces",
+        "10 holdout cases",
+        "model.answer",
+        "evaluation.judge",
+        "JSON schema",
+        "Citation validity",
+        "Evidence coverage",
+        "Escalation",
+        "Answer relevance",
+        "Instruction following",
+        "Faithfulness",
+        "aggregate-only",
+    ):
+        assert text in html
+
+
 def test_leaderboard_has_semantic_structure_and_required_states() -> None:
     html, parser = parse_page(LEADERBOARD / "index.html")
 
