@@ -12,6 +12,7 @@ DASHBOARD = ROOT / "dashboard"
 LEADERBOARD = DASHBOARD / "leaderboard"
 START = DASHBOARD / "start"
 OPIK = DASHBOARD / "opik"
+TUTORIAL = DASHBOARD / "tutorial"
 
 
 class DashboardParser(HTMLParser):
@@ -19,6 +20,7 @@ class DashboardParser(HTMLParser):
         super().__init__()
         self.tags: list[str] = []
         self.ids: set[str] = set()
+        self.anchors: list[dict[str, str | None]] = []
         self.links: list[str] = []
         self.scripts: list[str] = []
         self.h1_count = 0
@@ -33,8 +35,10 @@ class DashboardParser(HTMLParser):
             self.ids.add(value)
         if tag == "h1":
             self.h1_count += 1
-        if tag == "a" and values.get("href") == "#main-content":
-            self.has_skip_link = True
+        if tag == "a":
+            self.anchors.append(values)
+            if values.get("href") == "#main-content":
+                self.has_skip_link = True
         if values.get("aria-live"):
             self.has_live_region = True
         if values.get("role") == "alert":
@@ -60,7 +64,7 @@ def test_root_page_is_a_participant_focused_challenge_overview() -> None:
     assert {"header", "main", "section", "nav", "footer"} <= set(parser.tags)
     assert "Improve one prompt. Learn from every run." in html
     assert 'href="start/"' in html
-    assert 'href="opik/"' in html
+    assert 'href="tutorial/"' in html
     assert 'href="leaderboard/"' in html
     for noise in (
         "Public data",
@@ -70,6 +74,62 @@ def test_root_page_is_a_participant_focused_challenge_overview() -> None:
         "team_private_key.pem",
     ):
         assert noise not in html
+
+
+def test_tutorial_is_the_canonical_opik_participant_route() -> None:
+    page = TUTORIAL / "index.html"
+
+    assert page.is_file()
+    html, parser = parse_page(page)
+    assert parser.h1_count == 1
+    assert parser.has_skip_link
+    assert {"header", "main", "section", "nav", "footer"} <= set(parser.tags)
+    assert "Inspect submission feedback in Opik" in html
+    assert '<a href="./" aria-current="page">Opik tutorial</a>' in html
+
+
+def test_legacy_opik_route_redirects_to_tutorial_with_url_state() -> None:
+    html, _ = parse_page(OPIK / "index.html")
+
+    assert '<link rel="canonical" href="../tutorial/">' in html
+    assert '<meta name="robots" content="noindex">' in html
+    assert 'location.replace("../tutorial/" + location.search + location.hash);' in html
+    assert '<a href="../tutorial/">Continue to the Opik tutorial</a>' in html
+    for moved_content in (
+        "Start Opik locally",
+        "hkpug-opik-helper",
+        "tutorial-section",
+        "site-nav",
+    ):
+        assert moved_content not in html
+
+
+def test_participant_pages_link_prominently_to_opik_tutorial() -> None:
+    tutorial_page = TUTORIAL / "index.html"
+
+    assert tutorial_page.is_file()
+    overview_html, overview = parse_page(DASHBOARD / "index.html")
+    start_html, start = parse_page(START / "index.html")
+    tutorial_html, _ = parse_page(tutorial_page)
+
+    assert overview_html.count('<a href="tutorial/">Opik tutorial</a>') >= 2
+    assert any(
+        anchor.get("href") == "tutorial/" and anchor.get("class") == "button"
+        for anchor in overview.anchors
+    )
+    assert any(
+        anchor.get("href") == "tutorial/" and anchor.get("class") == "route-link"
+        for anchor in overview.anchors
+    )
+    assert start_html.count('<a href="../tutorial/">Opik tutorial</a>') >= 2
+    assert any(
+        anchor.get("href") == "../tutorial/"
+        and anchor.get("class") == "button button-primary"
+        for anchor in start.anchors
+    )
+    assert '<a href="./" aria-current="page">Opik tutorial</a>' in tutorial_html
+    assert 'href="opik/"' not in overview_html
+    assert 'href="../opik/"' not in start_html
 
 
 def test_first_submission_tutorial_is_complete_and_cross_platform() -> None:
@@ -98,17 +158,21 @@ def test_first_submission_tutorial_is_complete_and_cross_platform() -> None:
 
 
 def test_opik_tutorial_uses_only_public_helper_commands() -> None:
-    html, parser = parse_page(OPIK / "index.html")
+    page = TUTORIAL / "index.html"
+
+    assert page.is_file()
+    html, parser = parse_page(page)
 
     assert parser.h1_count == 1
     assert parser.has_skip_link
     assert {"header", "main", "section", "nav", "footer"} <= set(parser.tags)
     for text in (
-        "Inspect feedback in Opik",
+        "Inspect submission feedback in Opik",
         "Start Opik locally",
         "./opik.sh",
         "hkpug-opik-helper decrypt",
         "hkpug-opik-helper load",
+        "submission-feedback.cms",
         "http://localhost:5173",
     ):
         assert text in html
@@ -118,12 +182,16 @@ def test_opik_tutorial_uses_only_public_helper_commands() -> None:
         "uv run",
         "HKPUG Mini Workshop",
         "group-00.opik-workshop.python.hk",
+        "discovery-feedback.cms",
     ):
         assert noise not in html
 
 
 def test_opik_tutorial_explains_the_tournament_trace_contract() -> None:
-    html, _ = parse_page(OPIK / "index.html")
+    page = TUTORIAL / "index.html"
+
+    assert page.is_file()
+    html, _ = parse_page(page)
 
     assert (
         "Every scored attempt evaluates all 50 cases: 40 discovery cases and 10 "

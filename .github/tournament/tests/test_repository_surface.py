@@ -6,6 +6,7 @@ from pathlib import Path
 REPOSITORY_ROOT = next(
     parent for parent in Path(__file__).resolve().parents if (parent / ".git").exists()
 )
+DASHBOARD = REPOSITORY_ROOT / ".github" / "tournament" / "dashboard"
 
 
 def test_repository_root_contains_only_participant_surfaces() -> None:
@@ -64,3 +65,27 @@ def test_readme_is_participant_facing() -> None:
         "uv run",
     ):
         assert forbidden not in readme.lower()
+
+
+def test_opik_tutorial_content_is_participant_only() -> None:
+    page = DASHBOARD / "tutorial" / "index.html"
+
+    assert page.is_file()
+    tutorial = page.read_text(encoding="utf-8").lower()
+    for required in (
+        "participant guide",
+        "submission feedback",
+        "discovery cases",
+        "holdout cases",
+    ):
+        assert required in tutorial
+    for forbidden in (
+        "organizer",
+        "maintainer",
+        "trusted scorer",
+        ".github/tournament",
+        "import_opik.py",
+        "uv run",
+        "discovery-feedback.cms",
+    ):
+        assert forbidden not in tutorial
