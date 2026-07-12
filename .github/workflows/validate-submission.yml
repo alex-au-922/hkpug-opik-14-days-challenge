@@ -1,0 +1,56 @@
+name: Validate submission
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: validate-submission-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted base code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+
+      - name: Validate changed paths from GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" > /tmp/pr-files.json
+          cd trusted
+          uv run --frozen python scripts/validate_pr_files.py --files-json /tmp/pr-files.json
+
+      - name: Check out immutable participant files
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: untrusted
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate encrypted submission envelope
+        working-directory: trusted
+        run: >-
+          uv run --frozen python scripts/validate_submission.py
+          --submission-dir ../untrusted/submission
+          --allowlist-path .github/tournament/team_allowlist.json
+          --tournament-ca-cert-path .github/tournament/public_keys/tournament_ca_cert.pem
+          --scorer-cert-path .github/tournament/public_keys/scorer_cert.pem

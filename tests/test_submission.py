@@ -16,8 +16,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from hkpug_challenge.submission import (
+    ValidatedEnvelope,
     canonical_manifest_bytes,
     read_bounded_regular_file,
+    validate_submission_envelope,
     verify_submission,
 )
 
@@ -427,6 +429,15 @@ def verify_paths(
     )
 
 
+def validate_envelope_paths(paths: SubmissionPaths) -> ValidatedEnvelope:
+    return validate_submission_envelope(
+        submission_dir=paths["submission_directory"],
+        allowlist_path=paths["allowlist_path"],
+        tournament_ca_cert_path=paths["ca_cert_path"],
+        scorer_cert_path=paths["scorer_cert_path"],
+    )
+
+
 def get_manifest_path(paths: SubmissionPaths) -> Path:
     return paths["manifest_path"]
 
@@ -768,6 +779,24 @@ def test_encrypt_prompt_script_produces_a_verifiable_submission(tmp_path: Path) 
         result.prompt_sha256
         == hashlib.sha256(result.prompt_text.encode("utf-8")).hexdigest()
     )
+
+
+def test_public_envelope_validation_needs_no_private_key(tmp_path: Path) -> None:
+    paths = create_submission(tmp_path, "A private participant prompt.")
+    ciphertext_digest = hashlib.sha256(
+        paths["ciphertext_path"].read_bytes()
+    ).hexdigest()
+    paths["scorer_key_path"].unlink()
+
+    result = validate_envelope_paths(paths)
+
+    assert result.team_id == "organizer-test"
+    assert (
+        result.prompt_sha256
+        == hashlib.sha256(b"A private participant prompt.").hexdigest()
+    )
+    assert result.ciphertext_sha256 == ciphertext_digest
+    assert not hasattr(result, "prompt_text")
 
 
 @pytest.mark.parametrize(
