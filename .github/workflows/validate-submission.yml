@@ -1,8 +1,13 @@
 name: Validate submission
 
 on:
-  pull_request_target:
+  pull_request:
+    branches: [main]
     types: [opened, synchronize, reopened]
+    paths:
+      - submission/manifest.json
+      - submission/manifest.sig
+      - submission/prompt.txt.cms
 
 permissions:
   contents: read
@@ -32,7 +37,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > /tmp/pr.json
+          test "$(jq -r .head.repo.full_name /tmp/pr.json)" = "$EXPECTED_HEAD_REPOSITORY"
+          test "$(jq -r .head.sha /tmp/pr.json)" = "$EXPECTED_HEAD_SHA"
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" > /tmp/pr-files.json
           cd trusted
           uv run --frozen python scripts/validate_pr_files.py --files-json /tmp/pr-files.json
@@ -45,6 +55,11 @@ jobs:
           path: untrusted
           fetch-depth: 1
           persist-credentials: false
+          sparse-checkout: |
+            submission/manifest.json
+            submission/manifest.sig
+            submission/prompt.txt.cms
+          sparse-checkout-cone-mode: false
 
       - name: Validate encrypted submission envelope
         working-directory: trusted
