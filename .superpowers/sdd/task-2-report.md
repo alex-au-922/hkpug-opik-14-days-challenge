@@ -274,3 +274,41 @@ All checks passed!
 
 The two `git grep`/`git ls-files | rg` scans produced no matches after excluding
 the report text that documents the private-key scan command.
+
+## CMS Parser And Snapshot Fix
+
+Date: 2026-07-12
+
+- Replaced OpenSSL CMS text inspection with DER CMS parsing via `asn1crypto`.
+- Enforced exactly one total `recipientInfo`, rejected non-KTRI recipient types,
+  required `issuerAndSerialNumber`, compared issuer DER plus serial to the
+  trusted scorer certificate, and required parsed `aes256_cbc`.
+- Removed the ciphertext/key/cert TOCTOU window for OpenSSL decryption by
+  reading bounded regular non-symlink inputs first, writing exact-byte snapshots
+  into a private temporary directory with `0600` files, and invoking OpenSSL
+  only on those snapshots.
+- Normalized malformed and encrypted team private-key load failures, including
+  `TypeError`, to concise CLI `ValueError` output.
+- Added regressions for mixed scorer KTRI plus EC key-agreement recipient,
+  OpenSSL snapshot observation, and malformed/encrypted private-key CLI behavior.
+
+Red command:
+
+```sh
+uv run pytest tests/test_submission.py -k "snapshots_to_decryption or scorer_ktri_plus_key_agreement_recipient or invalid_private_key_without_traceback"
+```
+
+The red run failed on mixed-recipient acceptance, original OpenSSL path use,
+and the encrypted-key traceback.
+
+Green verification:
+
+```text
+focused regressions: 4 passed
+tests/test_submission.py: 36 passed
+full suite: 62 passed
+ruff check: passed
+pyright: 0 errors
+scorer/team/CA certificate verification: passed
+tracked secret scan: no matches
+```
