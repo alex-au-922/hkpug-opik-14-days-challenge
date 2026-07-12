@@ -40,6 +40,7 @@ This ledger records findings from independent discovery reviews before productio
 | Critical | Atomic attempts | Concurrent submissions can pass a non-atomic pre-check. | Serialize reservation updates globally; resume by submission identity after partial failure. | Open |
 | Important | Reproducibility | Temperature zero does not make a future external model call bit-for-bit reproducible. | Persist raw request/response and version metadata; replay recorded scoring without calling the model again. | Open |
 | Important | Cost controls | A 50-case run needs explicit call and token ceilings. | Cap prompt size, calls, estimated input tokens, output tokens, retries, and add a kill switch. | Open |
+| Important | Model mode | DeepSeek V4 Flash defaults to reasoning mode and can consume a short output budget before emitting JSON. | Pin `reasoning_effort: "none"` for all answer and judge calls; cover it in request-contract tests. | Open |
 
 ## Opik Import Decision
 

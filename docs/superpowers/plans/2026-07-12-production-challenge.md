@@ -13,6 +13,7 @@
 - Exactly 50 public case families across ten support domains.
 - Exactly eight total official scored attempts per team, idempotent by signed submission identity.
 - Use `accounts/fireworks/models/deepseek-v4-flash` for participant answers.
+- Send `reasoning_effort: "none"` on every DeepSeek V4 answer and judge request; the model defaults to reasoning mode and otherwise consumes the bounded output budget before emitting the required JSON.
 - Never commit Fireworks credentials, private keys, plaintext hidden cases, reference answers, or plaintext participant prompts.
 - Never execute participant-controlled code in any workflow, especially a secret-bearing workflow.
 - Only `submission/prompt.txt.cms`, `submission/manifest.json`, and `submission/manifest.sig` may change in a scoring PR.
@@ -168,7 +169,7 @@
 
 - [ ] **Step 3: Implement the Fireworks client and score contract**
 
-  Answer calls use temperature 0 and a 256-token cap. Judge calls receive question, context, participant answer, reference answer, and rubric but never the participant prompt; they return bounded `answer_relevance`, `instruction_following`, and `faithfulness` values plus short reasons.
+  Answer calls use temperature 0, `reasoning_effort: "none"`, and a 256-token cap. Judge calls use the same non-reasoning setting and receive question, context, participant answer, reference answer, and rubric but never the participant prompt; they return bounded `answer_relevance`, `instruction_following`, and `faithfulness` values plus short reasons.
 
 - [ ] **Step 4: Build portable Opik payloads**
 
