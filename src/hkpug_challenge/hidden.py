@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import re
+import stat
+import subprocess
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +29,9 @@ DIFFICULTY_COUNTS = {"easy": 10, "standard": 30, "hard": 10}
 EVIDENCE_ID_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+(?:-[A-Z0-9]+){2,}$")
 EXPECTED_SCHEMA_VERSION = 1
 EXPECTED_VARIANTS_PER_FAMILY = 8
+SUPPORTS_DIR_FD = os.open in os.supports_dir_fd
+SUPPORTS_NOFOLLOW = hasattr(os, "O_NOFOLLOW")
+SUPPORTS_FCHMOD = hasattr(os, "fchmod")
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,7 @@ class HiddenVariant:
     slot: int
     domain: str
     difficulty: str
+    archetype: str | None
     question: str
     context_files: tuple[str, ...]
     reference: HiddenReference
@@ -153,6 +159,15 @@ class _VariantPayload(BaseModel):
     def validate_non_empty_string(cls, value: str) -> str:
         if not value:
             raise ValueError("Hidden variant string fields must be non-empty.")
+        return value
+
+    @field_validator("archetype")
+    @classmethod
+    def validate_archetype(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("Hidden variant archetype must be a non-empty string.")
         return value
 
     @field_validator("slot")
@@ -257,10 +272,7 @@ def build_hidden_bank(
         ],
     }
     bank = _parse_hidden_bank(combined_payload, public_directory=public_directory)
-    _validate_output_path(
-        output_path=output_path,
-        repository_root=repository_root or _find_repository_root(output_path),
-    )
+    _validate_output_path(output_path=output_path, repository_root=repository_root)
     _write_hidden_bank(output_path, bank)
     return bank
 
@@ -350,6 +362,7 @@ def _build_variant(payload: _VariantPayload) -> HiddenVariant:
         slot=payload.slot,
         domain=payload.domain,
         difficulty=payload.difficulty,
+        archetype=payload.archetype,
         question=payload.question,
         context_files=payload.context_files,
         reference=HiddenReference(
@@ -500,42 +513,82 @@ def _normalize_text(value: str) -> str:
     return " ".join(value.split()).casefold()
 
 
-def _find_repository_root(path: Path) -> Path | None:
-    for candidate in (path.resolve(), *path.resolve().parents):
-        marker = candidate / ".git"
-        if marker.exists():
-            return candidate
-    return None
+def _validate_output_path(
+    output_path: Path, repository_root: Path | None
+) -> Path | None:
+    absolute_output_path = _absolute_path(output_path)
+    repository_roots = _repository_roots(absolute_output_path)
 
+    discovered_root = next(iter(repository_roots), None)
+    if discovered_root is None:
+        return None
 
-def _validate_output_path(output_path: Path, repository_root: Path | None) -> None:
-    output_path = output_path.resolve()
-    if repository_root is None:
-        return
-
-    repository_root = repository_root.resolve()
-    try:
-        output_path.relative_to(repository_root)
-    except ValueError:
-        return
-
-    local_root = repository_root / ".local"
-    try:
-        output_path.relative_to(local_root)
-    except ValueError as exc:
+    if len(repository_roots) > 1:
         raise ValueError(
-            "Refusing to write hidden bank output under the Git repository unless it is inside .local/."
-        ) from exc
+            "Refusing to write hidden bank output through a nested Git repository path."
+        )
+
+    if repository_root is not None and repository_root.resolve() != discovered_root:
+        raise ValueError(
+            "Caller-supplied repository_root does not match the authoritative repository root."
+        )
+
+    relative_output_path = absolute_output_path.relative_to(discovered_root)
+    _assert_output_path_is_ignored(discovered_root, relative_output_path)
+    return discovered_root
 
 
 def _write_hidden_bank(path: Path, bank: HiddenBank) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    absolute_path = _absolute_path(path)
+    absolute_path.parent.mkdir(parents=True, exist_ok=True)
     payload = _serialize_hidden_bank(bank)
-    descriptor = os.open(path, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    descriptor = _open_descriptor_anchored_file(absolute_path)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, indent=2))
         handle.write("\n")
-    path.chmod(0o600)
+
+
+def _open_descriptor_anchored_file(path: Path) -> int:
+    if not SUPPORTS_NOFOLLOW:
+        raise ValueError("Safe hidden bank writes require O_NOFOLLOW support.")
+    if not SUPPORTS_DIR_FD:
+        raise ValueError("Safe hidden bank writes require dir_fd support.")
+    if not SUPPORTS_FCHMOD:
+        raise ValueError("Safe hidden bank writes require fchmod support.")
+
+    parent_directory = path.parent
+    parent_directory.mkdir(parents=True, exist_ok=True)
+
+    try:
+        parent_fd = os.open(parent_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as exc:
+        raise ValueError(
+            "Refusing to write hidden bank output through a non-regular parent directory."
+        ) from exc
+
+    try:
+        flags = os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_NOFOLLOW
+        descriptor = os.open(path.name, flags, 0o600, dir_fd=parent_fd)
+    except OSError as exc:
+        os.close(parent_fd)
+        raise ValueError(
+            "Refusing to write hidden bank output because the final path component is unsafe."
+        ) from exc
+
+    try:
+        file_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise ValueError(
+                "Refusing to write hidden bank output because the target is not a regular file."
+            )
+        os.fchmod(descriptor, 0o600)
+    except Exception:
+        os.close(descriptor)
+        raise
+    finally:
+        os.close(parent_fd)
+
+    return descriptor
 
 
 def _serialize_hidden_bank(bank: HiddenBank) -> dict[str, object]:
@@ -553,6 +606,7 @@ def _serialize_hidden_bank(bank: HiddenBank) -> dict[str, object]:
                 "slot": variant.slot,
                 "domain": variant.domain,
                 "difficulty": variant.difficulty,
+                "archetype": variant.archetype,
                 "question": variant.question,
                 "context_files": list(variant.context_files),
                 "reference": {
@@ -575,3 +629,75 @@ def _serialize_hidden_bank(bank: HiddenBank) -> dict[str, object]:
             for variant in variants
         ],
     }
+
+
+def _absolute_path(path: Path) -> Path:
+    return path if path.is_absolute() else Path.cwd() / path
+
+
+def _path_ancestors(path: Path) -> tuple[Path, ...]:
+    absolute_path = _absolute_path(path)
+    return (absolute_path.parent, *absolute_path.parent.parents)
+
+
+def _repository_roots(path: Path) -> tuple[Path, ...]:
+    roots: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in _path_ancestors(path):
+        completed = subprocess.run(
+            ["git", "-C", str(candidate), "rev-parse", "--show-toplevel"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            continue
+        root = Path(completed.stdout.strip()).resolve()
+        if root not in seen:
+            roots.append(root)
+            seen.add(root)
+    return tuple(roots)
+
+
+def _assert_output_path_is_ignored(
+    repository_root: Path, relative_output_path: Path
+) -> None:
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_root),
+            "check-ignore",
+            "-v",
+            "--non-matching",
+            "--no-index",
+            "--",
+            str(relative_output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode == 128:
+        raise ValueError("Unable to validate hidden bank output path against git.")
+    if completed.returncode not in {0, 1}:
+        raise ValueError("Unable to validate hidden bank output path against git.")
+
+    output_lines = [line for line in completed.stdout.splitlines() if line]
+    if not output_lines:
+        raise ValueError("Hidden bank output path is not ignored by the repository.")
+
+    last_line = output_lines[-1]
+    prefix, _, _pathname = last_line.partition("\t")
+    if not _pathname:
+        raise ValueError("Hidden bank output path is not ignored by the repository.")
+
+    source, line_number, pattern = prefix.split(":", 2)
+    if source == "" and line_number == "" and pattern == "":
+        raise ValueError("Hidden bank output path is not ignored by the repository.")
+    if pattern.startswith("!"):
+        raise ValueError(
+            "Hidden bank output path is only matched by a negated ignore rule."
+        )
+    if completed.returncode != 0:
+        raise ValueError("Hidden bank output path is not ignored by the repository.")

@@ -14,9 +14,10 @@ Status: DONE
 ## Guardrails Implemented
 
 - Root schema fields are exactly `schema_version`, `dataset_version`, `rubric_version`, and `variants`.
-- Variant validation enforces `variant_id`, `family_id`, slots `1..8`, `domain`, `difficulty`, `question`, `context_files`, `reference`, and `rubric`.
+- Variant validation enforces `variant_id`, `family_id`, slots `1..8`, `domain`, `difficulty`, `archetype`, `question`, `context_files`, `reference`, and `rubric`.
 - Reference validation enforces non-empty answers capped at 100 words, citations, boolean escalation, and key points.
 - Rubric validation supports `required_citation_groups`, `required_points`, `prohibited_claims`, and `non_authoritative_evidence` without a blanket forbidden-citation rule.
+- Syntactic validators prove field presence and type; human review proves semantic correctness and non-authoritative status.
 - Hidden-bank validation enforces:
   - 400 variants total
   - 8 variants per family
@@ -28,8 +29,9 @@ Status: DONE
   - disjoint family and variant IDs
   - unique question text
   - no undisclosed context
-- Canonical writer sets file mode `0600`.
-- Build output is refused under a Git repository unless the target path is under `.local/`.
+- `reference.escalate` is preserved as the authoritative escalation state in the typed model, canonical JSON, and assigned variants.
+- Canonical writer sets file mode `0600` and rejects symlinks, non-regular targets, and unsafe final-component races.
+- Build output is refused unless the exact path is ignored by the authoritative Git repository with `git check-ignore --no-index`.
 
 ## Verification
 

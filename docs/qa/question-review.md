@@ -9,8 +9,9 @@ This review ledger is the human gate for hidden-bank fairness. It records review
 1. Review each hidden variant independently against its public family context.
 2. Confirm the question can be answered from listed public context alone, with no undisclosed facts.
 3. Confirm the reference answer is under 100 words and supported by listed evidence.
-4. Confirm `non_authoritative_evidence` is only evidence that may appear in context without carrying authority on its own.
-5. Leave every row `Pending` until two reviewers agree the variant is fair or reject it for revision.
+4. Confirm syntactic validators prove field presence and type, including that `non_authoritative_evidence` IDs exist; human review proves semantic correctness and that the evidence is truly non-authoritative.
+5. Confirm `reference.escalate` is the authoritative escalation state for the variant.
+6. Leave every row `Pending` until two reviewers agree the variant is fair or reject it for revision.
 
 ## Review Ledger
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import stat
 from collections import Counter
 from pathlib import Path
@@ -10,8 +11,10 @@ import pytest
 
 from hkpug_challenge import (
     HiddenBank,
+    HiddenVariant,
     build_attempt_suite,
     build_hidden_bank,
+    assign_hidden_variant,
     load_hidden_bank,
 )
 
@@ -99,6 +102,7 @@ def write_hidden_inputs(root: Path, cases: list[JsonDict]) -> Path:
                         "slot": slot,
                         "domain": domain,
                         "difficulty": case["difficulty"],
+                        "archetype": f"{case['id']}-slot-{slot}",
                         "question": f"Hidden question for {case['id']} slot {slot}",
                         "context_files": case["context_files"],
                         "reference": {
@@ -141,6 +145,17 @@ def build_synthetic_hidden_bank(root: Path) -> tuple[Path, Path]:
     return public_directory, input_directory
 
 
+def build_synthetic_hidden_bank_in_repo(root: Path) -> tuple[Path, Path, Path]:
+    repository_root = root / "repo"
+    repository_root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repository_root)], check=True)
+    (repository_root / ".gitignore").write_text(
+        "artifacts/hidden_bank.json\n", encoding="utf-8"
+    )
+    public_directory, input_directory = build_synthetic_hidden_bank(repository_root)
+    return repository_root, public_directory, input_directory
+
+
 def load_domain_payloads(input_directory: Path) -> list[JsonDict]:
     return [
         json.loads(path.read_text(encoding="utf-8"))
@@ -158,13 +173,16 @@ def write_domain_payloads(input_directory: Path, payloads: list[JsonDict]) -> No
 def test_build_hidden_bank_writes_canonical_json_and_deterministic_suites(
     tmp_path: Path,
 ) -> None:
-    public_directory, input_directory = build_synthetic_hidden_bank(tmp_path)
-    output_path = tmp_path / "artifacts" / "hidden_bank.json"
+    repository_root, public_directory, input_directory = build_synthetic_hidden_bank_in_repo(
+        tmp_path
+    )
+    output_path = repository_root / "artifacts" / "hidden_bank.json"
 
     bank = build_hidden_bank(
         input_directory=input_directory,
         output_path=output_path,
         public_directory=public_directory,
+        repository_root=repository_root,
     )
 
     assert isinstance(bank, HiddenBank)
@@ -183,6 +201,13 @@ def test_build_hidden_bank_writes_canonical_json_and_deterministic_suites(
     reloaded = load_hidden_bank(output_path, public_directory=public_directory)
     assert reloaded == bank
     assert len(reloaded.variants) == 400
+    assert all(isinstance(variant, HiddenVariant) for variant in reloaded.variants)
+    assert {variant.archetype for variant in reloaded.variants} == {
+        f"{prefix}-{family_number:02d}-slot-{slot}"
+        for _domain, prefix in DOMAINS
+        for family_number in range(1, 6)
+        for slot in range(1, 9)
+    }
 
     attempt_one = build_attempt_suite(reloaded, team_id="team-alpha", attempt=1)
     assert len(attempt_one) == 50
@@ -193,6 +218,9 @@ def test_build_hidden_bank_writes_canonical_json_and_deterministic_suites(
     assert Counter(variant.difficulty for variant in attempt_one) == Counter(
         {"easy": 10, "standard": 30, "hard": 10}
     )
+    assert all(
+        variant.reference.escalate == (variant.slot == 8) for variant in attempt_one
+    )
 
     slots = {
         build_attempt_suite(reloaded, team_id="team-alpha", attempt=attempt)[0].slot
@@ -202,6 +230,13 @@ def test_build_hidden_bank_writes_canonical_json_and_deterministic_suites(
     assert build_attempt_suite(
         reloaded, team_id="team-alpha", attempt=3
     ) == build_attempt_suite(reloaded, team_id="team-alpha", attempt=3)
+
+    assigned = assign_hidden_variant(
+        reloaded, team_id="team-alpha", family_id="ACC-01", attempt=1
+    )
+    assert isinstance(assigned, HiddenVariant)
+    assert assigned.reference.escalate == (assigned.slot == 8)
+    assert assigned.archetype == f"ACC-01-slot-{assigned.slot}"
 
 
 Mutation = Callable[[list[JsonDict]], None]
@@ -230,6 +265,10 @@ def mutate_variant_id_collision(payloads: list[JsonDict]) -> None:
     cast_variant(payloads, 0, 0)["variant_id"] = "ACC-01"
 
 
+def mutate_extra_variant_field(payloads: list[JsonDict]) -> None:
+    cast_variant(payloads, 0, 0)["unexpected"] = "value"
+
+
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
@@ -238,6 +277,7 @@ def mutate_variant_id_collision(payloads: list[JsonDict]) -> None:
         (mutate_undisclosed_context, "undisclosed context"),
         (mutate_unknown_reference_citation, "unknown citation"),
         (mutate_variant_id_collision, "disjoint"),
+        (mutate_extra_variant_field, "Extra inputs are not permitted"),
     ],
 )
 def test_build_hidden_bank_rejects_hidden_bank_invariant_violations(
@@ -258,31 +298,113 @@ def test_build_hidden_bank_rejects_hidden_bank_invariant_violations(
         )
 
 
-def test_build_hidden_bank_rejects_tracked_output_paths_but_allows_local(
+def test_build_hidden_bank_rejects_output_paths_only_allowed_by_negation(
     tmp_path: Path,
 ) -> None:
     repository_root = tmp_path / "repo"
-    (repository_root / ".git").mkdir(parents=True)
+    repository_root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repository_root)], check=True)
+    (repository_root / ".gitignore").write_text(
+        "artifacts/*.json\n!artifacts/hidden_bank.json\n", encoding="utf-8"
+    )
     public_directory, input_directory = build_synthetic_hidden_bank(repository_root)
 
-    with pytest.raises(ValueError, match=r"\.local"):
+    with pytest.raises(ValueError, match="negated"):
         build_hidden_bank(
             input_directory=input_directory,
-            output_path=repository_root / "hidden_bank.json",
+            output_path=repository_root / "artifacts" / "hidden_bank.json",
             public_directory=public_directory,
             repository_root=repository_root,
         )
 
-    output_path = repository_root / ".local" / "hidden" / "hidden_bank.json"
-    bank = build_hidden_bank(
-        input_directory=input_directory,
-        output_path=output_path,
-        public_directory=public_directory,
-        repository_root=repository_root,
-    )
 
-    assert isinstance(bank, HiddenBank)
-    assert output_path.exists()
+def test_build_hidden_bank_rejects_nested_repository_paths(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repo"
+    repository_root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repository_root)], check=True)
+    (repository_root / ".gitignore").write_text(
+        "artifacts/nested/hidden_bank.json\n", encoding="utf-8"
+    )
+    public_directory, input_directory = build_synthetic_hidden_bank(repository_root)
+    nested_repository = repository_root / "artifacts" / "nested"
+    nested_repository.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(nested_repository)], check=True)
+
+    with pytest.raises(ValueError, match="nested Git repository"):
+        build_hidden_bank(
+            input_directory=input_directory,
+            output_path=nested_repository / "hidden_bank.json",
+            public_directory=public_directory,
+            repository_root=repository_root,
+        )
+
+
+def test_build_hidden_bank_rejects_preexisting_symlink_output_path(
+    tmp_path: Path,
+) -> None:
+    repository_root = tmp_path / "repo"
+    repository_root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repository_root)], check=True)
+    (repository_root / ".gitignore").write_text(
+        "artifacts/hidden_bank.json\n", encoding="utf-8"
+    )
+    public_directory, input_directory = build_synthetic_hidden_bank(repository_root)
+
+    output_path = repository_root / "artifacts" / "hidden_bank.json"
+    target_path = repository_root / "victim.json"
+    target_path.write_text("victim\n", encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.symlink_to(target_path)
+
+    with pytest.raises(ValueError, match="unsafe|symlink"):
+        build_hidden_bank(
+            input_directory=input_directory,
+            output_path=output_path,
+            public_directory=public_directory,
+            repository_root=repository_root,
+        )
+
+    assert target_path.read_text(encoding="utf-8") == "victim\n"
+
+
+def test_build_hidden_bank_rejects_replacement_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository_root = tmp_path / "repo"
+    repository_root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repository_root)], check=True)
+    (repository_root / ".gitignore").write_text(
+        "artifacts/hidden_bank.json\n", encoding="utf-8"
+    )
+    public_directory, input_directory = build_synthetic_hidden_bank(repository_root)
+
+    output_path = repository_root / "artifacts" / "hidden_bank.json"
+    target_path = repository_root / "victim.json"
+    target_path.write_text("victim\n", encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("stale\n", encoding="utf-8")
+
+    original_os_open = __import__("os").open
+    raced = {"done": False}
+
+    def fake_open(path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None):
+        if not raced["done"] and str(path).endswith("hidden_bank.json"):
+            raced["done"] = True
+            output_path.unlink()
+            output_path.symlink_to(target_path)
+        return original_os_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr("hkpug_challenge.hidden.os.open", fake_open)
+
+    with pytest.raises(ValueError, match="unsafe|symlink"):
+        build_hidden_bank(
+            input_directory=input_directory,
+            output_path=output_path,
+            public_directory=public_directory,
+            repository_root=repository_root,
+        )
+
+    assert target_path.read_text(encoding="utf-8") == "victim\n"
 
 
 def test_question_review_doc_starts_without_hidden_content_approval() -> None:
