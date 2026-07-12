@@ -1,0 +1,103 @@
+name: Release participant helper
+
+on:
+  push:
+    tags:
+      - "helper-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing helper-v* tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-helper-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate release tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_TAG" =~ ^helper-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+      - name: Check out release source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: .github/tournament/helper/go.mod
+          cache-dependency-path: .github/tournament/helper/go.sum
+
+      - name: Test helper
+        working-directory: .github/tournament/helper
+        run: |
+          set -euo pipefail
+          cmp cmd/hkpug-opik-helper/scorer_cert.pem ../public_keys/scorer_cert.pem
+          go test ./...
+
+      - name: Build participant binaries
+        working-directory: .github/tournament/helper
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${REQUESTED_TAG#helper-v}"
+          mkdir -p dist/work
+          for target in \
+            darwin/amd64 \
+            darwin/arm64 \
+            linux/amd64 \
+            linux/arm64 \
+            windows/amd64 \
+            windows/arm64
+          do
+            GOOS="${target%/*}"
+            GOARCH="${target#*/}"
+            base="hkpug-opik-helper_${VERSION}_${GOOS}_${GOARCH}"
+            binary="dist/work/hkpug-opik-helper"
+            if [[ "$GOOS" == windows ]]; then
+              binary="${binary}.exe"
+            fi
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+              go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "$binary" ./cmd/hkpug-opik-helper
+            if [[ "$GOOS" == windows ]]; then
+              (cd dist/work && zip -q "../${base}.zip" hkpug-opik-helper.exe)
+            else
+              tar -czf "dist/${base}.tar.gz" -C dist/work hkpug-opik-helper
+            fi
+            rm -f dist/work/hkpug-opik-helper dist/work/hkpug-opik-helper.exe
+          done
+          (cd dist && sha256sum hkpug-opik-helper_* > checksums.txt)
+
+      - name: Publish GitHub release
+        working-directory: .github/tournament/helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$REQUESTED_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$REQUESTED_TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$REQUESTED_TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "hkpug-opik-helper ${REQUESTED_TAG#helper-v}" \
+              --generate-notes
+          fi

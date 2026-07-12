@@ -1,33 +1,74 @@
-# HKPUG Challenge Package
+# HKPUG Opik 14-Day Challenge
 
-Tasks 1 and 2 build the public challenge dataset, local answer validation
-contracts, and the encrypted prompt submission workflow for the HKPUG 14-day
-Opik production challenge.
+Improve one support-answer prompt over as many as eight scored attempts. Each
+attempt returns encrypted feedback that your team can inspect in Opik before
+revising the next prompt.
 
-## Included surfaces
+[First submission tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/start/) |
+[Inspect feedback in Opik](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/opik/) |
+[Live leaderboard](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/leaderboard/)
 
-- `public/cases.json`: versioned public case metadata
-- `public/contexts/*.md`: the shared handbook plus ten domain evidence packs
-- `src/hkpug_challenge/dataset.py`: `load_public_cases()`
-- `src/hkpug_challenge/messages.py`: `SYSTEM_PROMPT` and `render_messages()`
-- `src/hkpug_challenge/models.py`: `PublicCase`, `ChallengeAnswer`, and
-  `validate_answer()`
-- `src/hkpug_challenge/submission.py`: canonical manifest creation, manifest
-  signing, and trusted submission verification
-- `starter/prompt.example.txt`: a participant-facing prompt starting point
-- `submission/prompt.example.txt`: example participant prompt text
-- `submission/manifest.example.json`: canonical example manifest
-- `submission/encrypt_prompt.sh`: local prompt encryption and signing helper
-- `scripts/verify_submission.py`: trusted verifier CLI
-- `.github/tournament/public_keys/*.pem`: tracked tournament public certificates
-- `.github/tournament/team_allowlist.json`: tracked team certificate allowlist
+## Rules
 
-## Local checks
+- A team may submit twice per Hong Kong calendar day and eight times in total.
+- The official score is 75% discovery and 25% holdout.
+- A submission pull request must change only `submission/submission.zip`.
+- Keep your team private key and plaintext prompt out of Git.
+
+## First submission
+
+Download `hkpug-opik-helper` for your platform from the
+[latest release](https://github.com/alex-au-922/hkpug-opik-14-days-challenge/releases/latest).
+The [first submission tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/start/)
+has installation steps for macOS, Linux, and Windows.
+
+Start with the example prompt, then edit `submission/prompt.txt`:
 
 ```sh
-uv run pytest tests/test_submission.py -q
-uv run pytest tests/test_public_dataset.py -q
-uv run pytest -q
-uv run ruff format --check .
-uv run pyright
+cp starter/prompt.example.txt submission/prompt.txt
 ```
+
+Check the team credentials supplied at registration:
+
+```sh
+hkpug-opik-helper doctor \
+  --team-id your-team-id \
+  --private-key /path/to/team-private-key.pem \
+  --team-cert /path/to/team-certificate.pem
+```
+
+Create and inspect the one-file submission:
+
+```sh
+hkpug-opik-helper pack \
+  --team-id your-team-id \
+  --private-key /path/to/team-private-key.pem
+hkpug-opik-helper inspect \
+  --team-cert /path/to/team-certificate.pem
+```
+
+Commit `submission/submission.zip`, push your branch, and open a pull request to
+`main`:
+
+```sh
+git add submission/submission.zip
+git commit -m "submission: add scored attempt"
+git push
+```
+
+## Review feedback
+
+After scoring, download `discovery-feedback.cms` from the workflow link in the
+pull request comment. Decrypt it and load the traces into a running local Opik
+instance:
+
+```sh
+hkpug-opik-helper decrypt \
+  --private-key /path/to/team-private-key.pem \
+  --team-cert /path/to/team-certificate.pem
+hkpug-opik-helper load
+```
+
+Follow the [Opik feedback tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/opik/)
+for setup and review guidance. The practice cases are in [`public`](public), and
+the supplied prompts are in [`starter`](starter).

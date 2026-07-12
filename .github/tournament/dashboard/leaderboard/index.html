@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Official scores for the HKPUG Opik 14-Day Challenge.">
+    <title>HKPUG Opik Challenge | Standings</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="../styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to standings</a>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="../" aria-label="HKPUG Opik Challenge manual">
+          <span class="brand-mark" aria-hidden="true">14</span>
+          <span>
+            <strong>HKPUG Opik Challenge</strong>
+            <small>Official tournament board</small>
+          </span>
+        </a>
+        <div class="header-actions">
+          <nav class="site-nav" aria-label="Challenge pages">
+            <a href="../">Manual</a>
+            <a href="./" aria-current="page">Leaderboard</a>
+          </nav>
+          <div class="header-state">
+            <span id="challenge-status" class="status-badge" role="status">Loading</span>
+            <span id="last-updated" class="updated-at">Fetching scores...</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content" class="page-shell" tabindex="-1">
+      <section class="challenge-overview" aria-labelledby="page-title">
+        <div class="title-block">
+          <p class="eyebrow">14-day prompt tournament</p>
+          <h1 id="page-title">Live standings</h1>
+          <p id="challenge-dates" class="challenge-dates">Challenge schedule loading...</p>
+        </div>
+
+        <dl class="summary-grid" aria-label="Tournament summary">
+          <div>
+            <dt>Teams ranked</dt>
+            <dd id="team-count">-</dd>
+          </div>
+          <div>
+            <dt>Scored runs</dt>
+            <dd id="run-count">-</dd>
+          </div>
+          <div>
+            <dt>Top score</dt>
+            <dd id="top-score">-</dd>
+          </div>
+          <div>
+            <dt>Scoring split</dt>
+            <dd id="score-weights">75 / 25</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="standings" aria-labelledby="standings-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Official results</p>
+            <h2 id="standings-title">Leaderboard</h2>
+          </div>
+          <p>Best score determines rank. Ties go to the team that reached the score first.</p>
+        </div>
+
+        <div id="loading-state" class="message-state" role="status" aria-live="polite">
+          <span class="loading-indicator" aria-hidden="true"></span>
+          <div>
+            <strong>Loading standings</strong>
+            <p>Reading the latest published scores.</p>
+          </div>
+        </div>
+
+        <div id="error-state" class="message-state error-state" role="alert" hidden>
+          <span class="state-icon" aria-hidden="true">!</span>
+          <div>
+            <strong>Leaderboard data could not be loaded</strong>
+            <p>Refresh the page in a moment. Published scores remain unchanged.</p>
+          </div>
+        </div>
+
+        <div id="empty-state" class="message-state empty-state" aria-live="polite" hidden>
+          <span class="state-icon" aria-hidden="true">0</span>
+          <div>
+            <strong>No scored attempts yet</strong>
+            <p>The first completed tournament run will appear here automatically.</p>
+          </div>
+        </div>
+
+        <div id="dashboard-content" hidden>
+          <div class="table-shell" tabindex="0" aria-label="Scrollable leaderboard table">
+            <table>
+              <caption>
+                Official team rank, best and latest scores, score movement, and attempts used.
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Rank</th>
+                  <th scope="col">Team</th>
+                  <th scope="col">Best</th>
+                  <th scope="col">Latest</th>
+                  <th scope="col">Movement</th>
+                  <th scope="col">Attempts</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboard-body"></tbody>
+            </table>
+          </div>
+
+          <section id="team-detail" class="team-detail" aria-labelledby="team-detail-title" tabindex="-1">
+            <div class="detail-heading">
+              <div>
+                <p id="team-rank" class="eyebrow">Rank -</p>
+                <h2 id="team-detail-title">Team performance</h2>
+                <p id="team-identifier" class="team-identifier"></p>
+              </div>
+              <dl class="score-strip" aria-label="Selected team scores">
+                <div>
+                  <dt>Best</dt>
+                  <dd id="detail-best">-</dd>
+                </div>
+                <div>
+                  <dt>Latest</dt>
+                  <dd id="detail-latest">-</dd>
+                </div>
+                <div>
+                  <dt>Discovery</dt>
+                  <dd id="detail-discovery">-</dd>
+                </div>
+                <div>
+                  <dt>Holdout</dt>
+                  <dd id="detail-holdout">-</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div class="detail-grid">
+              <section class="run-panel" aria-labelledby="run-trend-title">
+                <div class="panel-heading">
+                  <h3 id="run-trend-title">Run trend</h3>
+                  <span>Official score by attempt</span>
+                </div>
+                <ol id="run-trend" class="run-trend"></ol>
+              </section>
+
+              <section class="criteria-panel" aria-labelledby="criteria-title">
+                <div class="panel-heading">
+                  <h3 id="criteria-title">Best-run criteria</h3>
+                  <span>Weighted points out of 100</span>
+                </div>
+                <div id="criterion-breakdown" class="criterion-breakdown"></div>
+              </section>
+            </div>
+          </section>
+        </div>
+
+        <p id="screen-reader-status" class="visually-hidden" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <footer>
+      <p>Scores combine 75% discovery cases and 25% aggregate holdout performance.</p>
+    </footer>
+  </body>
+</html>

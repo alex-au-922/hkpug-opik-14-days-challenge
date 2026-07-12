@@ -27,12 +27,13 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
 
       - name: Run real-model tournament proof
+        working-directory: .github/tournament
         env:
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
         run: |
-          prompt_path="starter/prompt.example.txt"
+          prompt_path="../../starter/prompt.example.txt"
           if [[ "${{ inputs.prompt_mode }}" == "weak-control" ]]; then
-            prompt_path="starter/prompt.weak-control.txt"
+            prompt_path="../../starter/prompt.weak-control.txt"
           fi
           uv run --frozen python scripts/run_playground.py --prompt-path "$prompt_path"
 
@@ -40,6 +41,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: playground-result
-          path: .local/playground/run.json
+          path: .github/tournament/.local/playground/run.json
           retention-days: 1
           if-no-files-found: error

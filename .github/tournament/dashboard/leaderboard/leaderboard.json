@@ -1,0 +1,18 @@
+{
+  "challenge": {
+    "ends_at": "2026-07-25T23:59:59+08:00",
+    "max_attempts": 8,
+    "max_daily_attempts": 2,
+    "name": "HKPUG Opik 14-Day Challenge",
+    "starts_at": "2026-07-12T00:00:00+08:00",
+    "status": "live",
+    "timezone": "Asia/Hong_Kong",
+    "weights": {
+      "discovery": 0.75,
+      "holdout": 0.25
+    }
+  },
+  "generated_at": "2026-07-12T23:30:00+08:00",
+  "schema_version": 1,
+  "teams": []
+}

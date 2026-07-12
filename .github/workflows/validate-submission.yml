@@ -5,9 +5,7 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened]
     paths:
-      - submission/manifest.json
-      - submission/manifest.sig
-      - submission/prompt.txt.cms
+      - submission/submission.zip
 
 permissions:
   contents: read
@@ -44,7 +42,7 @@ jobs:
           test "$(jq -r .head.repo.full_name /tmp/pr.json)" = "$EXPECTED_HEAD_REPOSITORY"
           test "$(jq -r .head.sha /tmp/pr.json)" = "$EXPECTED_HEAD_SHA"
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" > /tmp/pr-files.json
-          cd trusted
+          cd trusted/.github/tournament
           uv run --frozen python scripts/validate_pr_files.py --files-json /tmp/pr-files.json
 
       - name: Check out immutable participant files
@@ -56,16 +54,14 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           sparse-checkout: |
-            submission/manifest.json
-            submission/manifest.sig
-            submission/prompt.txt.cms
+            submission/submission.zip
           sparse-checkout-cone-mode: false
 
       - name: Validate encrypted submission envelope
-        working-directory: trusted
+        working-directory: trusted/.github/tournament
         run: >-
           uv run --frozen python scripts/validate_submission.py
-          --submission-dir ../untrusted/submission
-          --allowlist-path .github/tournament/team_allowlist.json
-          --tournament-ca-cert-path .github/tournament/public_keys/tournament_ca_cert.pem
-          --scorer-cert-path .github/tournament/public_keys/scorer_cert.pem
+          --submission-archive ../../../untrusted/submission/submission.zip
+          --allowlist-path team_allowlist.json
+          --tournament-ca-cert-path public_keys/tournament_ca_cert.pem
+          --scorer-cert-path public_keys/scorer_cert.pem
