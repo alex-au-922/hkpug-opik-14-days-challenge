@@ -36,16 +36,32 @@
           <p class="tutorial-lede">Decrypt the private submission feedback artifact from your scored run, load its traces into a local workspace, and use the evidence to plan your next prompt change.</p>
         </div>
         <ol class="tutorial-progress" aria-label="Submission feedback stages">
-          <li><span>1</span>Start Opik</li>
-          <li><span>2</span>Decrypt submission feedback</li>
+          <li><span>1</span>Download feedback</li>
+          <li><span>2</span>Start and decrypt</li>
           <li><span>3</span>Load and review</li>
         </ol>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="download-feedback-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">01</span>
+            <h2 id="download-feedback-title">Download the scored feedback</h2>
+          </div>
+          <p>Open the bot's score comment on your submission pull request and select <strong>Download the team-encrypted submission feedback</strong>.</p>
+        </div>
+        <div class="command-step">
+          <h3>Extract the ZIP archive</h3>
+          <p>The GitHub download is a ZIP archive whose name starts with <code>submission-feedback-pr-</code>. Extract it with Finder, File Explorer, or your normal archive tool. The extracted archive contains <code>submission-feedback.cms</code>.</p>
+          <p>Keep that file private. It is encrypted for your team and can only be opened with your team private key and certificate.</p>
+        </div>
+        <p class="command-note">Use the same <code>hkpug-opik-helper</code> and team credentials as your submission. If they are not ready, follow the <a href="../start/">first submission tutorial</a> and download the helper from the <a href="https://github.com/alex-au-922/hkpug-opik-14-days-challenge/releases/latest">latest release</a>.</p>
       </section>
 
       <section class="tutorial-section" aria-labelledby="start-opik-title">
         <div class="tutorial-section-header">
           <div>
-            <span class="section-number" aria-hidden="true">01</span>
+            <span class="section-number" aria-hidden="true">02</span>
             <h2 id="start-opik-title">Start Opik locally</h2>
           </div>
           <p>Install Git, Docker, and Docker Compose first. Then use Opik's public local-deployment scripts from the root of its repository.</p>
@@ -71,10 +87,10 @@ powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
       <section class="tutorial-section" aria-labelledby="decrypt-title">
         <div class="tutorial-section-header">
           <div>
-            <span class="section-number" aria-hidden="true">02</span>
+            <span class="section-number" aria-hidden="true">03</span>
             <h2 id="decrypt-title">Decrypt submission feedback</h2>
           </div>
-          <p>Download <code>submission-feedback.cms</code> from the scored run and keep it beside an empty destination folder on your machine.</p>
+          <p>Run the helper from the directory that contains the extracted <code>submission-feedback.cms</code> file.</p>
         </div>
         <div class="command-step">
           <h3>Open the private bundle</h3>
@@ -86,7 +102,7 @@ powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
       <section class="tutorial-section" aria-labelledby="load-title">
         <div class="tutorial-section-header">
           <div>
-            <span class="section-number" aria-hidden="true">03</span>
+            <span class="section-number" aria-hidden="true">04</span>
             <h2 id="load-title">Load the traces</h2>
           </div>
           <p>Keep Opik running while the helper imports the decrypted bundle into the local default workspace.</p>
@@ -94,14 +110,14 @@ powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
         <div class="command-step">
           <h3>Import into local Opik</h3>
           <pre><code>hkpug-opik-helper load --feedback feedback --opik-url http://localhost:5173/api --workspace default</code></pre>
-          <p>The command prints the imported project name and item counts. Re-loading the same bundle is safe.</p>
+          <p>The command prints the imported project name and item counts. Re-loading the same bundle is safe. Open the project named in the helper output, then choose <strong>Logs</strong> and <strong>Traces</strong>.</p>
         </div>
       </section>
 
       <section class="tutorial-section" aria-labelledby="review-title">
         <div class="tutorial-section-header">
           <div>
-            <span class="section-number" aria-hidden="true">04</span>
+            <span class="section-number" aria-hidden="true">05</span>
             <h2 id="review-title">Review before changing the prompt</h2>
           </div>
           <p>Open the imported project and use the Traces view to compare behavior across cases.</p>
@@ -117,7 +133,7 @@ powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
       <section class="tutorial-section" aria-labelledby="scope-title">
         <div class="tutorial-section-header">
           <div>
-            <span class="section-number" aria-hidden="true">05</span>
+            <span class="section-number" aria-hidden="true">06</span>
             <h2 id="scope-title">Understand the submission feedback scope</h2>
           </div>
           <p>Every scored attempt evaluates all 50 cases: 40 discovery cases and 10 holdout cases.</p>
@@ -128,7 +144,7 @@ powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
       <section class="tutorial-section" aria-labelledby="anatomy-title">
         <div class="tutorial-section-header">
           <div>
-            <span class="section-number" aria-hidden="true">06</span>
+            <span class="section-number" aria-hidden="true">07</span>
             <h2 id="anatomy-title">Read a discovery trace</h2>
           </div>
           <p>Each discovery trace has a <code>model.answer</code> span for the response and an <code>evaluation.judge</code> span for the evaluation.</p>

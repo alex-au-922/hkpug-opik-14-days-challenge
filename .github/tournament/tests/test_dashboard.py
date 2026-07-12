@@ -168,14 +168,20 @@ def test_opik_tutorial_uses_only_public_helper_commands() -> None:
     assert {"header", "main", "section", "nav", "footer"} <= set(parser.tags)
     for text in (
         "Inspect submission feedback in Opik",
+        "Open the bot's score comment",
+        "The GitHub download is a ZIP archive",
+        "Extract the ZIP archive",
         "Start Opik locally",
         "./opik.sh",
         "hkpug-opik-helper decrypt",
         "hkpug-opik-helper load",
         "submission-feedback.cms",
         "http://localhost:5173",
+        "Open the project named in the helper output",
     ):
         assert text in html
+    assert "../start/" in html
+    assert "releases/latest" in html
     for noise in (
         ".github/tournament",
         "import_opik.py",
