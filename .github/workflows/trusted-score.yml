@@ -249,12 +249,12 @@ jobs:
             --output /tmp/private/scoring \
             > /tmp/private/public-score.json
 
-      - name: Encrypt discovery feedback
+      - name: Encrypt submission feedback
         if: env.ALREADY_SCORED != 'true'
         working-directory: trusted/.github/tournament
         run: |
           set -euo pipefail
-          tar -czf /tmp/private/discovery-feedback.tar.gz \
+          tar -czf /tmp/private/submission-feedback.tar.gz \
             -C /tmp/private/scoring/bundle .
           TEAM_ID=$(jq -r .team_id /tmp/private/verified-submission.json)
           TEAM_CERT=$(jq -r --arg team "$TEAM_ID" \
@@ -262,16 +262,17 @@ jobs:
             team_allowlist.json)
           test "$TEAM_CERT" != ""
           scripts/encrypt_feedback.sh \
-            /tmp/private/discovery-feedback.tar.gz \
+            /tmp/private/submission-feedback.tar.gz \
             "$TEAM_CERT" \
-            /tmp/discovery-feedback.cms
+            /tmp/submission-feedback.cms
 
-      - name: Upload encrypted feedback
+      - name: Upload encrypted submission feedback
+        id: upload_submission_feedback
         if: env.ALREADY_SCORED != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: discovery-feedback-pr-${{ env.PR_NUMBER }}
-          path: /tmp/discovery-feedback.cms
+          name: submission-feedback-pr-${{ env.PR_NUMBER }}
+          path: /tmp/submission-feedback.cms
           retention-days: ${{ vars.BUNDLE_RETENTION_DAYS }}
           if-no-files-found: error
 
@@ -308,16 +309,28 @@ jobs:
         if: env.ALREADY_SCORED != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          ARTIFACT_URL: ${{ steps.upload_submission_feedback.outputs.artifact-url }}
         run: |
           set -euo pipefail
+          test -n "$ARTIFACT_URL"
+          [[ "$ARTIFACT_URL" == https://* ]]
           SCORE=$(jq -r .overall_score /tmp/private/scoring/summary.json)
           ATTEMPT=$(jq -r .attempt /tmp/private/reservation.json)
           gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
-            "Scored attempt ${ATTEMPT}/8: **${SCORE}/100**. [Download the team-encrypted discovery feedback from this workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Holdout feedback remains aggregate-only."
+            "Scored attempt ${ATTEMPT}/8: **${SCORE}/100**. [Download the team-encrypted submission feedback](${ARTIFACT_URL}). Holdout feedback remains aggregate-only."
 
       - name: Remove decrypted material
         if: always()
-        run: rm -rf /tmp/private /tmp/submission /tmp/submission.zip /tmp/discovery-feedback.cms
+        run: rm -rf /tmp/private /tmp/submission /tmp/submission.zip /tmp/submission-feedback.cms
+
+      - name: Comment scoring failure
+        if: ${{ failure() && env.PR_NUMBER != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Scoring did not complete. Organizers can safely retry the same signed submission. Rerunning the same submission identity does not consume an additional attempt."
 
   deploy-pages:
     needs: score

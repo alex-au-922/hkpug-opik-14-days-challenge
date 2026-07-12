@@ -389,7 +389,7 @@ def test_trusted_scoring_gates_secrets_and_atomically_reserves_eight_attempts() 
 def test_trusted_feedback_is_encrypted_and_holdout_is_aggregate_only() -> None:
     text = load_workflow(TRUSTED_WORKFLOW)
     score_step = named_step(text, r"score.*(?:fixed )?(?:evaluation )?bank")
-    encrypt_step = named_step(text, r"encrypt.*discovery.*feedback")
+    encrypt_step = named_step(text, r"encrypt.*feedback")
     upload_step = named_step(text, r"upload.*encrypted.*feedback")
 
     assert "FIREWORKS_MODEL: ${{ vars.FIREWORKS_MODEL }}" in score_step
@@ -408,9 +408,18 @@ def test_trusted_feedback_is_encrypted_and_holdout_is_aggregate_only() -> None:
         flags=re.IGNORECASE | re.DOTALL,
     )
     assert "scripts/encrypt_feedback.sh" in encrypt_step
+    assert "/tmp/private/submission-feedback.tar.gz" in encrypt_step
+    assert "/tmp/submission-feedback.cms" in encrypt_step
+    assert "discovery-feedback.tar.gz" not in encrypt_step
     assert text.index(score_step) < text.index(encrypt_step) < text.index(upload_step)
     assert "actions/upload-artifact@" in upload_step
-    assert re.search(r"(?m)^\s+path:\s*[^\n]*\.cms\s*$", upload_step)
+    assert re.search(
+        r"(?m)^\s+name:\s*submission-feedback-pr-\$\{\{\s*env\.PR_NUMBER\s*}}\s*$",
+        upload_step,
+    )
+    assert re.search(r"(?m)^\s+path:\s*/tmp/submission-feedback\.cms\s*$", upload_step)
+    assert "discovery-feedback-pr-" not in upload_step
+    assert "/tmp/discovery-feedback.cms" not in upload_step
     assert "retention-days: ${{ vars.BUNDLE_RETENTION_DAYS }}" in upload_step
     assert "if-no-files-found: error" in upload_step
     for forbidden in (
@@ -422,12 +431,65 @@ def test_trusted_feedback_is_encrypted_and_holdout_is_aggregate_only() -> None:
         assert forbidden not in upload_step
 
 
-def test_score_comment_links_to_the_current_scoring_run_artifact() -> None:
+def test_score_comment_links_directly_to_uploaded_submission_feedback() -> None:
     text = load_workflow(TRUSTED_WORKFLOW)
+    upload_step = named_step(text, r"upload.*encrypted.*feedback")
     comment_step = named_step(text, r"comment.*score.*artifact")
 
-    assert "actions/runs/${GITHUB_RUN_ID}" in comment_step
-    assert "github.event.workflow_run.id" not in comment_step
+    assert re.search(r"(?m)^\s+id:\s*upload_submission_feedback\s*$", upload_step)
+    assert (
+        "ARTIFACT_URL: ${{ steps.upload_submission_feedback.outputs.artifact-url }}"
+        in comment_step
+    )
+    assert (
+        "[Download the team-encrypted submission feedback](${ARTIFACT_URL})"
+        in comment_step
+    )
+    assert "actions/runs/${GITHUB_RUN_ID}" not in comment_step
+
+
+def test_score_comment_validates_artifact_url_after_upload_before_posting() -> None:
+    text = load_workflow(TRUSTED_WORKFLOW)
+    upload_step = named_step(text, r"upload.*encrypted.*feedback")
+    comment_step = named_step(text, r"comment.*score.*artifact")
+    nonempty_guard = 'test -n "$ARTIFACT_URL"'
+    https_guard = '[[ "$ARTIFACT_URL" == https://* ]]'
+    post_comment = 'gh pr comment "$PR_NUMBER"'
+
+    assert text.index(upload_step) < text.index(comment_step)
+    assert nonempty_guard in comment_step
+    assert https_guard in comment_step
+    assert post_comment in comment_step
+    assert (
+        comment_step.index(nonempty_guard)
+        < comment_step.index(https_guard)
+        < comment_step.index(post_comment)
+    )
+
+
+def test_scoring_failure_comment_is_final_and_requires_resolved_pr() -> None:
+    text = load_workflow(TRUSTED_WORKFLOW)
+    score_job = workflow_job(text, "score")
+    cleanup_step = named_step(score_job, r"remove.*decrypted")
+    failure_step = named_step(score_job, r"comment.*scoring.*(?:failure|failed)")
+    step_names = re.findall(r"(?m)^\s+- name:\s*(.+?)\s*$", score_job)
+
+    assert re.search(
+        r"(?m)^\s+if:\s*\$\{\{\s*failure\(\)\s*&&\s*env\.PR_NUMBER\s*!=\s*''\s*}}\s*$",
+        failure_step,
+    )
+    assert "GH_TOKEN: ${{ github.token }}" in failure_step
+    assert 'gh pr comment "$PR_NUMBER"' in failure_step
+    assert "Scoring did not complete" in failure_step
+    assert "Organizers can safely retry the same signed submission" in failure_step
+    assert (
+        "Rerunning the same submission identity does not consume an additional attempt"
+        in failure_step
+    )
+    assert score_job.index(cleanup_step) < score_job.index(failure_step)
+    assert re.search(
+        r"comment.*scoring.*(?:failure|failed)", step_names[-1], flags=re.IGNORECASE
+    )
 
 
 def test_scoring_posts_a_progress_comment_after_validation() -> None:
