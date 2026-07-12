@@ -173,14 +173,35 @@ def read_bounded_regular_file_snapshot(
             "Atomic no-symlink file verification requires POSIX os.O_NOFOLLOW; "
             "run untrusted submission verification on Linux, macOS, or WSL."
         )
+    nonblock = getattr(os, "O_NONBLOCK", None)
+    if nonblock is None:
+        raise ValueError(
+            "Non-blocking file verification requires os.O_NONBLOCK to avoid FIFO "
+            "hangs; run untrusted submission verification on a POSIX platform."
+        )
 
     try:
-        file_descriptor = os.open(path, os.O_RDONLY | nofollow)
+        file_stat = path.lstat()
+    except FileNotFoundError as exc:
+        raise ValueError(f"{label} file was not found.") from exc
+    except OSError:
+        raise
+
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise ValueError(f"{label} file must be a regular file.")
+
+    try:
+        file_descriptor = os.open(path, os.O_RDONLY | nofollow | nonblock)
     except FileNotFoundError as exc:
         raise ValueError(f"{label} file was not found.") from exc
     except OSError as exc:
         if exc.errno == errno.ELOOP:
             raise ValueError(f"{label} file must be a regular file.") from exc
+        if exc.errno in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
+            raise ValueError(
+                "Atomic submission verification requires os.O_NOFOLLOW and "
+                "os.O_NONBLOCK support on this platform."
+            ) from exc
         raise
 
     try:

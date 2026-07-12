@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import signal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, TypedDict
@@ -987,8 +988,6 @@ def test_read_bounded_regular_file_uses_open_descriptor_after_metadata_check(
     original_content = b"original submission bytes"
     swapped_content = b"swapped submission bytes"
     path.write_bytes(original_content)
-    original_lstat = Path.lstat
-    original_fstat = os.fstat
     replaced = False
 
     def replace_path_once() -> None:
@@ -999,19 +998,25 @@ def test_read_bounded_regular_file_uses_open_descriptor_after_metadata_check(
         path.unlink()
         path.write_bytes(swapped_content)
 
-    def racing_lstat(self: Path) -> os.stat_result:
-        result = original_lstat(self)
-        if self == path:
+    original_open = os.open
+
+    def racing_open(
+        file: os.PathLike[str] | str | bytes,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        opened_path = os.fspath(file)
+        if dir_fd is None:
+            file_descriptor = original_open(file, flags, mode)
+        else:
+            file_descriptor = original_open(file, flags, mode, dir_fd=dir_fd)
+        if opened_path == os.fspath(path):
             replace_path_once()
-        return result
+        return file_descriptor
 
-    def racing_fstat(file_descriptor: int) -> os.stat_result:
-        result = original_fstat(file_descriptor)
-        replace_path_once()
-        return result
-
-    monkeypatch.setattr(Path, "lstat", racing_lstat)
-    monkeypatch.setattr(os, "fstat", racing_fstat)
+    monkeypatch.setattr(os, "open", racing_open)
 
     assert read_bounded_regular_file(path, "Race test", 64) == original_content
     assert path.read_bytes() == swapped_content
@@ -1051,6 +1056,45 @@ def test_read_bounded_regular_file_rejects_growth_after_metadata_check(
 
     with pytest.raises(ValueError, match="too large"):
         read_bounded_regular_file(path, "Race test", 16)
+
+
+def test_read_bounded_regular_file_rejects_fifo_without_blocking(
+    tmp_path: Path,
+) -> None:
+    if os.name == "nt" or not hasattr(os, "mkfifo"):
+        pytest.skip("Named pipes are not portable on this platform.")
+
+    path = tmp_path / "submission.pipe"
+    os.mkfifo(path)
+
+    timed_out = False
+
+    def fail_on_timeout(_signum: int, _frame: Any) -> None:
+        nonlocal timed_out
+        timed_out = True
+        raise AssertionError("FIFO verification blocked instead of rejecting promptly.")
+
+    previous_handler = signal.signal(signal.SIGALRM, fail_on_timeout)
+    signal.alarm(2)
+    try:
+        with pytest.raises(ValueError, match="regular file"):
+            read_bounded_regular_file(path, "Race test", 64)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+    assert not timed_out
+
+
+def test_read_bounded_regular_file_rejects_non_regular_path_portably(
+    tmp_path: Path,
+) -> None:
+    candidate = Path(os.devnull)
+    if not candidate.exists():
+        candidate = tmp_path
+
+    with pytest.raises(ValueError, match="regular file"):
+        read_bounded_regular_file(candidate, "Device test", 64)
 
 
 def test_verify_submission_uses_same_ciphertext_bytes_for_inspection_and_decryption(

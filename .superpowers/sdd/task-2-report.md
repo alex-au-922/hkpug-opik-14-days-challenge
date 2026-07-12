@@ -337,3 +337,37 @@ full suite before concurrent evaluation-bank edits: 65 passed
 owned-file ruff and pyright: passed
 certificate and tracked-secret scans: passed
 ```
+
+## FIFO and Non-Regular Prefilter Hardening
+
+Date: 2026-07-12
+
+- Added a non-authoritative `lstat` prefilter in `read_bounded_regular_file()`
+  so obvious non-regular paths are rejected before any open call.
+- Kept the race-safe descriptor path by opening with
+  `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` when supported, then validating with
+  `fstat` before the bounded read.
+- Returned concise `regular file` failures for FIFOs and other non-regular
+  inputs, and failed closed with explicit platform guidance if `O_NOFOLLOW` or
+  `O_NONBLOCK` is unavailable.
+- Added regressions for FIFO rejection without blocking, a portable
+  non-regular/device case, and preserved the path-swap descriptor test.
+
+Red regression:
+
+```text
+test_read_bounded_regular_file_rejects_fifo_without_blocking
+```
+
+The first run timed out in `os.open()` on a FIFO, confirming the original
+blocking bug.
+
+Green verification:
+
+```text
+targeted regression set: 4 passed
+full pytest: 70 passed
+ruff check: passed
+ruff format --check: passed
+pyright: 0 errors
+```
