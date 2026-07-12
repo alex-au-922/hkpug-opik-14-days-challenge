@@ -150,6 +150,29 @@ def test_score_prompt_returns_discovery_detail_and_aggregate_holdout(
     assert "participant_prompt" in client.calls[0][0][-1]["content"]
 
 
+def test_score_prompt_reports_case_progress_without_case_details(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    client = FakeCompletionClient(
+        [valid_answer(), judge_response(), valid_answer(), judge_response()]
+    )
+    progress: list[tuple[int, int]] = []
+
+    score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-progress",
+        participant_prompt="Return JSON.",
+        cases=(make_case("DISC-01", "discovery"), make_case("HOLD-01", "holdout")),
+        public_directory=public,
+        client=client,
+        on_case_start=lambda current, total: progress.append((current, total)),
+    )
+
+    assert progress == [(1, 2), (2, 2)]
+
+
 def test_score_prompt_applies_partial_deterministic_scores(tmp_path: Path) -> None:
     public = write_contexts(tmp_path)
     partial_answer = json.dumps(

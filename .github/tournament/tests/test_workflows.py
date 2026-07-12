@@ -392,6 +392,11 @@ def test_trusted_feedback_is_encrypted_and_holdout_is_aggregate_only() -> None:
     encrypt_step = named_step(text, r"encrypt.*discovery.*feedback")
     upload_step = named_step(text, r"upload.*encrypted.*feedback")
 
+    assert "FIREWORKS_MODEL: ${{ vars.FIREWORKS_MODEL }}" in score_step
+    assert (
+        'test "$FIREWORKS_MODEL" = "accounts/fireworks/models/deepseek-v4-flash"'
+        in score_step
+    )
     assert re.search(
         r"discovery(?:_|-|\s)+(?:feedback|output|mode).*?(?:full|trace)",
         score_step,
@@ -447,8 +452,17 @@ def test_scoring_posts_a_progress_comment_after_validation() -> None:
 
 def test_leaderboard_update_is_serialized_append_only_and_non_force() -> None:
     text = load_workflow(TRUSTED_WORKFLOW)
+    identity_step = named_step(text, r"configure.*leaderboard.*git.*identity")
+    reserve_step = named_step(
+        text, r"reserve.*attempt.*atomic|atomic.*reserve.*attempt"
+    )
     update_step = named_step(text, r"update.*leaderboard")
 
+    assert "git config user.name github-actions" in identity_step
+    assert "git config user.email" in identity_step
+    assert (
+        text.index(identity_step) < text.index(reserve_step) < text.index(update_step)
+    )
     assert "LEADERBOARD_BRANCH: ${{ vars.LEADERBOARD_BRANCH }}" in text
     assert "LEADERBOARD_DIR: ${{ github.workspace }}/leaderboard-site" in text
     assert "append" in update_step.lower()

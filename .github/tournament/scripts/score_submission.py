@@ -64,6 +64,7 @@ def main() -> int:
                 model=os.environ.get("FIREWORKS_MODEL", FIREWORKS_MODEL),
             ),
             max_calls=args.max_calls,
+            on_case_start=_log_progress,
         )
         _write_outputs(args.output, result)
     except (RuntimeError, ValueError) as exc:
@@ -111,6 +112,10 @@ def _write_private_json(path: Path, payload: dict[str, Any]) -> None:
     )
     if os.name != "nt":
         path.chmod(0o600)
+
+
+def _log_progress(current: int, total: int) -> None:
+    print(f"Scoring case {current}/{total}.", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

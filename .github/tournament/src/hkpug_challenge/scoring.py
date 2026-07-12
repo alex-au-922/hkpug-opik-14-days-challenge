@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -57,6 +58,7 @@ def score_prompt(
     public_directory: Path,
     client: CompletionClient,
     max_calls: int = 100,
+    on_case_start: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     prompt = participant_prompt.strip()
     if not prompt:
@@ -70,15 +72,18 @@ def score_prompt(
         )
 
     started_at = _timestamp()
-    results = [
-        _score_case(
-            case=case,
-            participant_prompt=prompt,
-            public_directory=public_directory,
-            client=client,
+    results: list[dict[str, Any]] = []
+    for current, case in enumerate(cases, start=1):
+        if on_case_start is not None:
+            on_case_start(current, len(cases))
+        results.append(
+            _score_case(
+                case=case,
+                participant_prompt=prompt,
+                public_directory=public_directory,
+                client=client,
+            )
         )
-        for case in cases
-    ]
     discovery_results = [
         result for result in results if result["partition"] == "discovery"
     ]

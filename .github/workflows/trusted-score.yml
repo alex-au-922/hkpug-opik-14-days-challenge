@@ -99,6 +99,12 @@ jobs:
           path: leaderboard-site
           persist-credentials: true
 
+      - name: Configure leaderboard git identity
+        working-directory: leaderboard-site
+        run: |
+          git config user.name github-actions
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
 
@@ -204,8 +210,6 @@ jobs:
               -out "$LEADERBOARD_DIR/state/events.jsonl.cms" \
               public_keys/scorer_cert.pem
             cd "$LEADERBOARD_DIR"
-            git config user.name github-actions
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add state/events.jsonl.cms
             git commit -m "score: reserve attempt"
             git push origin "HEAD:${LEADERBOARD_BRANCH}"
@@ -222,6 +226,7 @@ jobs:
           HOLDOUT_FEEDBACK_MODE: aggregate_only
         run: |
           set -euo pipefail
+          test "$FIREWORKS_MODEL" = "accounts/fireworks/models/deepseek-v4-flash"
           test "$DISCOVERY_FEEDBACK_MODE" = full_trace
           test "$HOLDOUT_FEEDBACK_MODE" = aggregate_only
           openssl cms -decrypt -binary -inform DER \
