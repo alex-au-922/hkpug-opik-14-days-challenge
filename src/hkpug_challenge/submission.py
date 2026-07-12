@@ -76,6 +76,7 @@ __all__ = [
     "SubmissionManifest",
     "TeamAllowlist",
     "TeamAllowlistEntry",
+    "ValidatedEnvelope",
     "VerifiedSubmission",
     "build_argument_parser",
     "build_manifest",
@@ -100,6 +101,7 @@ __all__ = [
     "resolve_allowlisted_cert_path",
     "sign_manifest_file",
     "validate_prompt_text",
+    "validate_submission_envelope",
     "verify_certificate_against_ca",
     "verify_leaf_certificate_against_ca",
     "verify_manifest_signature",
@@ -125,6 +127,21 @@ class VerifiedSubmission:
     created_at: str
     prompt_sha256: str
     prompt_text: str
+
+
+@dataclass(frozen=True)
+class ValidatedEnvelope:
+    team_id: str
+    created_at: str
+    prompt_sha256: str
+    ciphertext_sha256: str
+
+
+@dataclass(frozen=True)
+class _EnvelopeMaterial:
+    envelope: ValidatedEnvelope
+    scorer_certificate_bytes: bytes
+    ciphertext_bytes: bytes
 
 
 def build_manifest(
@@ -206,6 +223,63 @@ def verify_submission(
     scorer_private_key_path: Path = DEFAULT_SCORER_PRIVATE_KEY_PATH,
     scorer_cert_path: Path = DEFAULT_SCORER_CERT_PATH,
 ) -> VerifiedSubmission:
+    material = _validate_submission_envelope_material(
+        submission_dir=submission_dir,
+        allowlist_path=allowlist_path,
+        tournament_ca_cert_path=tournament_ca_cert_path,
+        scorer_cert_path=scorer_cert_path,
+    )
+    scorer_private_key_bytes = read_private_key_file(
+        scorer_private_key_path,
+        "Scorer private key",
+    )
+    prompt_bytes = decrypt_ciphertext(
+        ciphertext_bytes=material.ciphertext_bytes,
+        scorer_private_key_bytes=scorer_private_key_bytes,
+        scorer_cert_bytes=material.scorer_certificate_bytes,
+    )
+    try:
+        prompt_text = prompt_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Decrypted prompt payload must be valid UTF-8 text.") from exc
+    prompt_bytes = validate_prompt_text(prompt_text)
+
+    prompt_sha256 = sha256(prompt_bytes).hexdigest()
+    if prompt_sha256 != material.envelope.prompt_sha256:
+        raise ValueError(
+            "Manifest prompt_sha256 does not match the decrypted prompt text."
+        )
+
+    return VerifiedSubmission(
+        team_id=material.envelope.team_id,
+        created_at=material.envelope.created_at,
+        prompt_sha256=prompt_sha256,
+        prompt_text=prompt_text,
+    )
+
+
+def validate_submission_envelope(
+    *,
+    submission_dir: Path,
+    allowlist_path: Path = DEFAULT_ALLOWLIST_PATH,
+    tournament_ca_cert_path: Path = DEFAULT_TOURNAMENT_CA_CERT_PATH,
+    scorer_cert_path: Path = DEFAULT_SCORER_CERT_PATH,
+) -> ValidatedEnvelope:
+    return _validate_submission_envelope_material(
+        submission_dir=submission_dir,
+        allowlist_path=allowlist_path,
+        tournament_ca_cert_path=tournament_ca_cert_path,
+        scorer_cert_path=scorer_cert_path,
+    ).envelope
+
+
+def _validate_submission_envelope_material(
+    *,
+    submission_dir: Path,
+    allowlist_path: Path,
+    tournament_ca_cert_path: Path,
+    scorer_cert_path: Path,
+) -> _EnvelopeMaterial:
     manifest_path = submission_dir / MANIFEST_FILENAME
     signature_path = submission_dir / SIGNATURE_FILENAME
     ciphertext_path = submission_dir / Path(EXPECTED_PROMPT_PATH).name
@@ -244,10 +318,6 @@ def verify_submission(
         MAX_CERTIFICATE_BYTES,
     )
     scorer_certificate = load_certificate_bytes(scorer_certificate_bytes)
-    scorer_private_key_bytes = read_private_key_file(
-        scorer_private_key_path,
-        "Scorer private key",
-    )
     ciphertext_bytes = read_bounded_regular_file(
         ciphertext_path,
         "Prompt ciphertext",
@@ -273,28 +343,15 @@ def verify_submission(
     )
     inspect_ciphertext(ciphertext_bytes, scorer_certificate)
 
-    prompt_bytes = decrypt_ciphertext(
+    return _EnvelopeMaterial(
+        envelope=ValidatedEnvelope(
+            team_id=manifest.team_id,
+            created_at=manifest.created_at,
+            prompt_sha256=manifest.prompt_sha256,
+            ciphertext_sha256=sha256(ciphertext_bytes).hexdigest(),
+        ),
+        scorer_certificate_bytes=scorer_certificate_bytes,
         ciphertext_bytes=ciphertext_bytes,
-        scorer_private_key_bytes=scorer_private_key_bytes,
-        scorer_cert_bytes=scorer_certificate_bytes,
-    )
-    try:
-        prompt_text = prompt_bytes.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValueError("Decrypted prompt payload must be valid UTF-8 text.") from exc
-    prompt_bytes = validate_prompt_text(prompt_text)
-
-    prompt_sha256 = sha256(prompt_bytes).hexdigest()
-    if prompt_sha256 != manifest.prompt_sha256:
-        raise ValueError(
-            "Manifest prompt_sha256 does not match the decrypted prompt text."
-        )
-
-    return VerifiedSubmission(
-        team_id=manifest.team_id,
-        created_at=manifest.created_at,
-        prompt_sha256=prompt_sha256,
-        prompt_text=prompt_text,
     )
 
 
@@ -331,6 +388,24 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=DEFAULT_SCORER_PRIVATE_KEY_PATH,
     )
     verify_parser.add_argument(
+        "--scorer-cert-path",
+        type=Path,
+        default=DEFAULT_SCORER_CERT_PATH,
+    )
+
+    validate_parser = subparsers.add_parser("validate-envelope")
+    validate_parser.add_argument("--submission-dir", type=Path, required=True)
+    validate_parser.add_argument(
+        "--allowlist-path",
+        type=Path,
+        default=DEFAULT_ALLOWLIST_PATH,
+    )
+    validate_parser.add_argument(
+        "--tournament-ca-cert-path",
+        type=Path,
+        default=DEFAULT_TOURNAMENT_CA_CERT_PATH,
+    )
+    validate_parser.add_argument(
         "--scorer-cert-path",
         type=Path,
         default=DEFAULT_SCORER_CERT_PATH,
@@ -376,6 +451,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "team_id": verified_submission.team_id,
                         "created_at": verified_submission.created_at,
                         "prompt_sha256": verified_submission.prompt_sha256,
+                    }
+                )
+            )
+            return 0
+
+        if args.command == "validate-envelope":
+            validated_envelope = validate_submission_envelope(
+                submission_dir=args.submission_dir,
+                allowlist_path=args.allowlist_path,
+                tournament_ca_cert_path=args.tournament_ca_cert_path,
+                scorer_cert_path=args.scorer_cert_path,
+            )
+            print(
+                json.dumps(
+                    {
+                        "team_id": validated_envelope.team_id,
+                        "created_at": validated_envelope.created_at,
+                        "prompt_sha256": validated_envelope.prompt_sha256,
+                        "ciphertext_sha256": validated_envelope.ciphertext_sha256,
                     }
                 )
             )
