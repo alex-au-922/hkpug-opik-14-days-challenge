@@ -48,7 +48,7 @@ jobs:
           test "$(jq -r .head_repository.full_name /tmp/workflow-run.json)" = "$EVENT_HEAD_REPOSITORY"
           test "$(jq -r .head_sha /tmp/workflow-run.json)" = "$EVENT_HEAD_SHA"
           gh api -H "Accept: application/vnd.github+json" \
-            "repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
+            "repos/${EVENT_HEAD_REPOSITORY}/commits/${EVENT_HEAD_SHA}/pulls" \
             > /tmp/candidate-pulls.json
           jq --arg repository "$EVENT_HEAD_REPOSITORY" --arg sha "$EVENT_HEAD_SHA" \
             '[.[] | select(.base.ref == "main" and .head.repo.full_name == $repository and .head.sha == $sha)]' \

@@ -280,6 +280,10 @@ def test_trusted_scoring_accepts_only_a_successful_expected_pr_workflow() -> Non
     ):
         assert token in provenance
     assert "gh api" in provenance or "github.rest." in provenance
+    assert (
+        '"repos/${EVENT_HEAD_REPOSITORY}/commits/${EVENT_HEAD_SHA}/pulls"' in provenance
+    )
+    assert '"repos/${{ github.repository }}/commits/' not in provenance
 
 
 def test_trusted_refetches_immutable_blobs_without_pr_checkout() -> None:
