@@ -100,6 +100,9 @@ def assert_action_references_are_pinned(text: str) -> None:
     references = re.findall(r"(?m)^\s*uses:\s*['\"]?([^'\"\s]+)", text)
     assert references, "Workflow must use at least one action"
     for reference in references:
+        if reference.startswith("./"):
+            assert re.fullmatch(r"\./\.github/workflows/[A-Za-z0-9_-]+\.yml", reference)
+            continue
         assert re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", reference), (
             f"Action must be pinned to a full commit SHA: {reference}"
         )
@@ -377,8 +380,7 @@ def test_leaderboard_update_is_serialized_append_only_and_non_force() -> None:
     assert "prompt" not in update_step.lower()
     assert "evaluation_bank" not in update_step
     leaderboard_path = (
-        "/tmp/leaderboard/.github/tournament/dashboard/"
-        "leaderboard/leaderboard.json"
+        "/tmp/leaderboard/.github/tournament/dashboard/leaderboard/leaderboard.json"
     )
     assert leaderboard_path in update_step
     assert "/tmp/leaderboard/dashboard/" not in update_step

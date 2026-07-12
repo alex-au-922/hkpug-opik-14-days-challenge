@@ -95,6 +95,17 @@ func Pack(options PackOptions) (Manifest, error) {
 }
 
 func Inspect(payload []byte, teamCertificate *x509.Certificate) (Manifest, error) {
+	return inspect(payload, teamCertificate, nil)
+}
+
+func InspectForRecipient(payload []byte, teamCertificate, scorerCertificate *x509.Certificate) (Manifest, error) {
+	if scorerCertificate == nil {
+		return Manifest{}, errors.New("organizer certificate is required")
+	}
+	return inspect(payload, teamCertificate, scorerCertificate)
+}
+
+func inspect(payload []byte, teamCertificate, scorerCertificate *x509.Certificate) (Manifest, error) {
 	if len(payload) == 0 || len(payload) > MaxSubmissionBytes {
 		return Manifest{}, errors.New("submission archive size is invalid")
 	}
@@ -113,12 +124,15 @@ func Inspect(payload []byte, teamCertificate *x509.Certificate) (Manifest, error
 	if err != nil {
 		return Manifest{}, err
 	}
+	if teamCertificate.Subject.CommonName != manifest.TeamID {
+		return Manifest{}, errors.New("manifest team ID does not match the team certificate")
+	}
 	digest := sha256.Sum256(files[manifestFilename])
 	if err := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, digest[:], files[signatureFilename]); err != nil {
 		return Manifest{}, errors.New("manifest signature does not match the team certificate")
 	}
-	if _, err := pkcs7.Parse(files[ciphertextFilename]); err != nil {
-		return Manifest{}, fmt.Errorf("prompt ciphertext is not CMS DER: %w", err)
+	if err := validateCMSEnvelope(files[ciphertextFilename], scorerCertificate, "prompt ciphertext"); err != nil {
+		return Manifest{}, err
 	}
 	return manifest, nil
 }

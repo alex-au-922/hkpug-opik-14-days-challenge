@@ -169,7 +169,11 @@ func runInspect(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	manifest, err := helper.Inspect(payload, teamCertificate)
+	scorerCertificate, err := helper.ParseCertificatePEM(scorerCertificatePEM)
+	if err != nil {
+		return fmt.Errorf("embedded organizer certificate: %w", err)
+	}
+	manifest, err := helper.InspectForRecipient(payload, teamCertificate, scorerCertificate)
 	if err != nil {
 		return err
 	}

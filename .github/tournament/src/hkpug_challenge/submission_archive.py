@@ -121,9 +121,7 @@ def _validate_archive_entry(entry: zipfile.ZipInfo) -> None:
     if entry.compress_type not in _ALLOWED_COMPRESSION:
         raise ValueError("Submission archive uses an unsupported compression method.")
     if entry.file_size > EXPECTED_ARCHIVE_ENTRIES[entry.filename]:
-        raise ValueError(
-            f"Submission archive entry {entry.filename!r} is too large."
-        )
+        raise ValueError(f"Submission archive entry {entry.filename!r} is too large.")
     unix_mode = entry.external_attr >> 16
     if unix_mode and stat.S_IFMT(unix_mode) not in {0, stat.S_IFREG}:
         raise ValueError("Submission archive entries must be regular files.")

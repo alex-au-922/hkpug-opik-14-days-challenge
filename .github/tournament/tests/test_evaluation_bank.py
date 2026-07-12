@@ -517,9 +517,7 @@ def test_build_script_uses_trusted_script_location_for_repo_root(
 
 
 def test_tracked_evaluation_bank_is_encrypted_and_opaque() -> None:
-    encrypted_path = (
-        Path(__file__).resolve().parents[1] / "evaluation_bank.json.cms"
-    )
+    encrypted_path = Path(__file__).resolve().parents[1] / "evaluation_bank.json.cms"
     encrypted = encrypted_path.read_bytes()
 
     assert len(encrypted) > 100_000

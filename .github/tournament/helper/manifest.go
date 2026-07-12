@@ -59,7 +59,11 @@ func canonicalManifest(manifest Manifest) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode manifest: %w", err)
 	}
-	return append(payload, '\n'), nil
+	payload = append(payload, '\n')
+	if len(payload) > maxManifestBytes {
+		return nil, errors.New("manifest exceeds the submission limit")
+	}
+	return payload, nil
 }
 
 func parseManifest(payload []byte) (Manifest, error) {
