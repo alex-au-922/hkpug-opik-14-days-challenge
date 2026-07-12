@@ -7,7 +7,11 @@ from typing import Any
 from hkpug_challenge.dataset import load_public_cases
 from hkpug_challenge.fireworks import Completion, FireworksClient
 from hkpug_challenge.models import Message
-from hkpug_challenge.playground import PlaygroundCase, run_playground
+from hkpug_challenge.playground import (
+    FIXED_SYSTEM_PROMPT,
+    PlaygroundCase,
+    run_playground,
+)
 
 
 class FakeCompletionClient:
@@ -110,6 +114,12 @@ def test_playground_run_reveals_discovery_but_only_aggregates_holdout() -> None:
     assert result["overall_score"] == 87.0
     assert "system_prompt" not in result
     assert result["prompt_sha256"]
+    answer_messages = client.calls[0][0]
+    assert answer_messages[0]["content"] == FIXED_SYSTEM_PROMPT
+    assert (
+        "Use only evidence and return the requested JSON."
+        in answer_messages[1]["content"]
+    )
 
 
 def test_playground_structure_scores_distinguish_bad_prompt_output() -> None:
