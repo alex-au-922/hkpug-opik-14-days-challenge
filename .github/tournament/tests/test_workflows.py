@@ -425,6 +425,26 @@ def test_score_comment_links_to_the_current_scoring_run_artifact() -> None:
     assert "github.event.workflow_run.id" not in comment_step
 
 
+def test_scoring_posts_a_progress_comment_after_validation() -> None:
+    text = load_workflow(TRUSTED_WORKFLOW)
+    provenance_step = named_step(text, r"validate.*(?:workflow|run).*provenance")
+    gate_step = named_step(text, r"(?:check|require|gate).*scoring.*enabled")
+    progress_step = named_step(text, r"comment.*scoring.*(?:started|running|progress)")
+    score_step = named_step(text, r"score.*(?:fixed )?(?:evaluation )?bank")
+
+    assert "gh pr comment" in progress_step
+    assert "GH_TOKEN: ${{ github.token }}" in progress_step
+    assert "Validation completed" in progress_step
+    assert "scoring pipeline is running" in progress_step
+    assert "50 cases" in progress_step
+    assert (
+        text.index(provenance_step)
+        < text.index(gate_step)
+        < text.index(progress_step)
+        < text.index(score_step)
+    )
+
+
 def test_leaderboard_update_is_serialized_append_only_and_non_force() -> None:
     text = load_workflow(TRUSTED_WORKFLOW)
     update_step = named_step(text, r"update.*leaderboard")
