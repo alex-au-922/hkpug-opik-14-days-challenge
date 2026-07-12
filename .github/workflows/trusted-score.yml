@@ -69,10 +69,17 @@ jobs:
           SCORING_ENABLED: ${{ vars.SCORING_ENABLED == 'true' }}
         run: test "$SCORING_ENABLED" = true
 
+      - name: Validate organizer ref
+        env:
+          ORGANIZER_REF: ${{ vars.ORGANIZER_REF }}
+        run: |
+          set -euo pipefail
+          [[ "$ORGANIZER_REF" =~ ^[0-9a-f]{40}$ ]]
+
       - name: Check out trusted scorer code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ vars.ORGANIZER_REF }}
           path: trusted
           persist-credentials: false
 

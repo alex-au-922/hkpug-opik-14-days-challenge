@@ -21,10 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Validate organizer ref
+        env:
+          ORGANIZER_REF: ${{ vars.ORGANIZER_REF }}
+        run: |
+          set -euo pipefail
+          [[ "$ORGANIZER_REF" =~ ^[0-9a-f]{40}$ ]]
+
       - name: Check out trusted base code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ vars.ORGANIZER_REF }}
           path: trusted
           persist-credentials: false
 
