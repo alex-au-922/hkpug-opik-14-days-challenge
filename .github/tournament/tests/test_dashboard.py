@@ -125,22 +125,23 @@ def test_opik_tutorial_uses_only_public_helper_commands() -> None:
 def test_opik_tutorial_explains_the_tournament_trace_contract() -> None:
     html, _ = parse_page(OPIK / "index.html")
 
-    for text in (
-        "50 cases",
-        "40 discovery traces",
-        "10 holdout cases",
-        "model.answer",
-        "evaluation.judge",
-        "JSON schema",
-        "Citation validity",
-        "Evidence coverage",
-        "Escalation",
-        "Answer relevance",
-        "Instruction following",
-        "Faithfulness",
-        "aggregate-only",
-    ):
-        assert text in html
+    assert (
+        "Every scored attempt evaluates all 50 cases: 40 discovery cases and 10 "
+        "holdout cases."
+    ) in html
+    assert "The bundle imports exactly 40 discovery traces." in html
+    assert (
+        "The 10 holdout cases never appear as traces; their results are aggregate-only."
+    ) in html
+    assert (
+        "Each discovery trace has a <code>model.answer</code> span for the response "
+        "and an <code>evaluation.judge</code> span for the evaluation."
+    ) in html
+    assert (
+        "Use the seven score columns to find a pattern: JSON schema, Citation "
+        "validity, Evidence coverage, Escalation, Answer relevance, Instruction "
+        "following, and Faithfulness."
+    ) in html
 
 
 def test_leaderboard_has_semantic_structure_and_required_states() -> None:
