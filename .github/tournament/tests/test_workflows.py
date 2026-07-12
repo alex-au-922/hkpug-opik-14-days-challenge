@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_ROOT = REPO_ROOT / ".github" / "workflows"
 VALIDATE_WORKFLOW = "validate-submission.yml"
 TRUSTED_WORKFLOW = "trusted-score.yml"
+PLAYGROUND_WORKFLOW = "playground-smoke.yml"
 PAGES_WORKFLOW = "deploy-pages.yml"
 HELPER_RELEASE_WORKFLOW = "release-helper.yml"
 SUBMISSION_PATHS = {"submission/submission.zip"}
@@ -185,7 +186,7 @@ def test_untrusted_validation_runs_trusted_base_code_only() -> None:
 
     assert checkouts, "Validation needs an explicit checkout of trusted base code"
     trusted_step = named_step(text, r"check out.*trusted.*base.*code")
-    assert "github.event.pull_request.base.sha" in trusted_step
+    assert "ref: ${{ vars.ORGANIZER_REF }}" in trusted_step
     assert "github.event.pull_request.head" not in trusted_step
     assert re.search(r"(?m)^\s+persist-credentials:\s*false\s*$", trusted_step)
 
@@ -267,7 +268,7 @@ def test_trusted_refetches_immutable_blobs_without_pr_checkout() -> None:
     checkouts = checkout_steps(text)
     assert checkouts, "Trusted scoring must explicitly checkout its trusted code"
     for step in checkouts:
-        assert "ref: ${{ github.sha }}" in step
+        assert "ref: ${{ vars.ORGANIZER_REF }}" in step
         assert "workflow_run.head_sha" not in step
         assert "pull_request.head" not in step
         assert re.search(r"(?m)^\s+persist-credentials:\s*false\s*$", step)
@@ -290,6 +291,16 @@ def test_trusted_refetches_immutable_blobs_without_pr_checkout() -> None:
 
     verify_step = named_step(text, r"re-?validate.*signed.*envelope")
     assert "scripts/verify_submission.py" in verify_step
+
+
+def test_playground_uses_the_organizer_ref_for_trusted_code() -> None:
+    text = load_workflow(PLAYGROUND_WORKFLOW)
+    trusted_step = named_step(text, r"check out.*trusted.*playground.*code")
+
+    assert "ref: ${{ vars.ORGANIZER_REF }}" in trusted_step
+    assert "github.event.pull_request.head" not in trusted_step
+    assert "github.event.workflow_run.head_sha" not in trusted_step
+    assert re.search(r"(?m)^\s+persist-credentials:\s*false\s*$", trusted_step)
 
 
 def test_trusted_scoring_gates_secrets_and_atomically_reserves_eight_attempts() -> None:
