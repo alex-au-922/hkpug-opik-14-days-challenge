@@ -1,0 +1,288 @@
+name: Score validated submission
+
+on:
+  workflow_run:
+    workflows: ["Validate submission"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  cancel-in-progress: false
+  group: tournament-scoring
+
+env:
+  MAX_ATTEMPTS: ${{ vars.MAX_ATTEMPTS }}
+  LEADERBOARD_BRANCH: ${{ vars.LEADERBOARD_BRANCH }}
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Validate workflow run provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          EVENT_TYPE: ${{ github.event.workflow_run.event }}
+          EVENT_REPOSITORY: ${{ github.event.workflow_run.repository.full_name }}
+          EVENT_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          EVENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "$EVENT_CONCLUSION" = success
+          test "$EVENT_TYPE" = pull_request
+          test "$EVENT_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test "$EVENT_HEAD_REPOSITORY" != ""
+          test "$EVENT_HEAD_SHA" != ""
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}" > /tmp/workflow-run.json
+          test "$(jq -r .conclusion /tmp/workflow-run.json)" = success
+          test "$(jq -r .event /tmp/workflow-run.json)" = pull_request
+          test "$(jq -r .repository.full_name /tmp/workflow-run.json)" = "$EXPECTED_REPOSITORY"
+          test "$(jq -r .head_repository.full_name /tmp/workflow-run.json)" = "$EVENT_HEAD_REPOSITORY"
+          test "$(jq -r .head_sha /tmp/workflow-run.json)" = "$EVENT_HEAD_SHA"
+          gh api -H "Accept: application/vnd.github+json" \
+            "repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
+            > /tmp/candidate-pulls.json
+          jq --arg repository "$EVENT_HEAD_REPOSITORY" --arg sha "$EVENT_HEAD_SHA" \
+            '[.[] | select(.base.ref == "main" and .head.repo.full_name == $repository and .head.sha == $sha)]' \
+            /tmp/candidate-pulls.json > /tmp/matching-pulls.json
+          test "$(jq length /tmp/matching-pulls.json)" = 1
+          PR_NUMBER=$(jq -r '.[0].number' /tmp/matching-pulls.json)
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$EVENT_HEAD_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          [[ "$EVENT_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          {
+            echo "PR_NUMBER=$PR_NUMBER"
+            echo "VERIFIED_HEAD_REPOSITORY=$EVENT_HEAD_REPOSITORY"
+            echo "VERIFIED_HEAD_SHA=$EVENT_HEAD_SHA"
+          } >> "$GITHUB_ENV"
+
+      - name: Require scoring enabled
+        env:
+          SCORING_ENABLED: ${{ vars.SCORING_ENABLED == 'true' }}
+        run: test "$SCORING_ENABLED" = true
+
+      - name: Check out trusted scorer code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+
+      - name: Revalidate exact changed paths
+        working-directory: trusted
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          EVENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$EVENT_HEAD_REPOSITORY" = "$VERIFIED_HEAD_REPOSITORY"
+          test "$EVENT_HEAD_SHA" = "$VERIFIED_HEAD_SHA"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" > /tmp/pr-files.json
+          uv run --frozen python scripts/validate_pr_files.py --files-json /tmp/pr-files.json
+
+      - name: Re-fetch exact submission blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          EVENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$EVENT_HEAD_REPOSITORY" = "$VERIFIED_HEAD_REPOSITORY"
+          test "$EVENT_HEAD_SHA" = "$VERIFIED_HEAD_SHA"
+          install -d -m 700 /tmp/submission
+          MANIFEST_PATH=submission/manifest.json
+          SIGNATURE_PATH=submission/manifest.sig
+          CIPHERTEXT_PATH=submission/prompt.txt.cms
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/${VERIFIED_HEAD_REPOSITORY}/contents/${MANIFEST_PATH}?ref=${VERIFIED_HEAD_SHA}" \
+            > /tmp/submission/manifest.json
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/${VERIFIED_HEAD_REPOSITORY}/contents/${SIGNATURE_PATH}?ref=${VERIFIED_HEAD_SHA}" \
+            > /tmp/submission/manifest.sig
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/${VERIFIED_HEAD_REPOSITORY}/contents/${CIPHERTEXT_PATH}?ref=${VERIFIED_HEAD_SHA}" \
+            > /tmp/submission/prompt.txt.cms
+          chmod 600 \
+            /tmp/submission/manifest.json \
+            /tmp/submission/manifest.sig \
+            /tmp/submission/prompt.txt.cms
+
+      - name: Revalidate signed submission envelope
+        working-directory: trusted
+        env:
+          SCORER_PRIVATE_KEY_PEM: ${{ secrets.SCORER_PRIVATE_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 /tmp/private
+          printf '%s\n' "$SCORER_PRIVATE_KEY_PEM" > /tmp/private/scorer-key.pem
+          chmod 600 /tmp/private/scorer-key.pem
+          uv run --frozen python scripts/verify_submission.py \
+            --submission-dir /tmp/submission \
+            --allowlist-path .github/tournament/team_allowlist.json \
+            --tournament-ca-cert-path .github/tournament/public_keys/tournament_ca_cert.pem \
+            --scorer-cert-path .github/tournament/public_keys/scorer_cert.pem \
+            --scorer-private-key-path /tmp/private/scorer-key.pem \
+            > /tmp/private/verified-submission.json
+          chmod 600 /tmp/private/verified-submission.json
+
+      - name: Atomically reserve attempt
+        working-directory: trusted
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$MAX_ATTEMPTS" == "8" ]]
+          test "$HEAD_SHA" = "$VERIFIED_HEAD_SHA"
+          gh repo clone "$GITHUB_REPOSITORY" /tmp/leaderboard -- \
+            --branch "$LEADERBOARD_BRANCH" --single-branch
+          install -d -m 700 /tmp/private
+          if [[ -s /tmp/leaderboard/state/events.jsonl.cms ]]; then
+            openssl cms -decrypt -binary -inform DER \
+              -in /tmp/leaderboard/state/events.jsonl.cms \
+              -inkey /tmp/private/scorer-key.pem \
+              -recip .github/tournament/public_keys/scorer_cert.pem \
+              -out /tmp/private/events.jsonl
+          else
+            : > /tmp/private/events.jsonl
+          fi
+          chmod 600 /tmp/private/events.jsonl
+          cp /tmp/private/events.jsonl /tmp/private/events-before.jsonl
+          TEAM_ID=$(jq -r .team_id /tmp/private/verified-submission.json)
+          PROMPT_SHA256=$(jq -r .prompt_sha256 /tmp/private/verified-submission.json)
+          uv run --frozen python scripts/leaderboard_state.py reserve \
+            --events /tmp/private/events.jsonl \
+            --team-id "$TEAM_ID" \
+            --display-name "$TEAM_ID" \
+            --prompt-sha256 "$PROMPT_SHA256" \
+            --head-sha "$HEAD_SHA" \
+            --reserved-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output /tmp/private/reservation.json
+          echo "ALREADY_SCORED=$(jq -r .already_scored /tmp/private/reservation.json)" >> "$GITHUB_ENV"
+          if ! cmp -s /tmp/private/events-before.jsonl /tmp/private/events.jsonl; then
+            install -d /tmp/leaderboard/state
+            openssl cms -encrypt -binary -aes-256-cbc \
+              -in /tmp/private/events.jsonl -outform DER \
+              -out /tmp/leaderboard/state/events.jsonl.cms \
+              .github/tournament/public_keys/scorer_cert.pem
+            cd /tmp/leaderboard
+            git config user.name github-actions
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add state/events.jsonl.cms
+            git commit -m "score: reserve attempt"
+            git push origin "HEAD:${LEADERBOARD_BRANCH}"
+          fi
+
+      - name: Score fixed evaluation bank
+        if: env.ALREADY_SCORED != 'true'
+        working-directory: trusted
+        env:
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          FIREWORKS_MODEL: ${{ vars.FIREWORKS_MODEL }}
+          MAX_FIREWORKS_CALLS_PER_RUN: ${{ vars.MAX_FIREWORKS_CALLS_PER_RUN }}
+          DISCOVERY_FEEDBACK_MODE: full_trace
+          HOLDOUT_FEEDBACK_MODE: aggregate_only
+        run: |
+          set -euo pipefail
+          test "$DISCOVERY_FEEDBACK_MODE" = full_trace
+          test "$HOLDOUT_FEEDBACK_MODE" = aggregate_only
+          openssl cms -decrypt -binary -inform DER \
+            -in .github/tournament/evaluation_bank.json.cms \
+            -inkey /tmp/private/scorer-key.pem \
+            -recip .github/tournament/public_keys/scorer_cert.pem \
+            -out /tmp/private/evaluation-bank.json
+          chmod 600 /tmp/private/evaluation-bank.json
+          ATTEMPT=$(jq -r .attempt /tmp/private/reservation.json)
+          uv run --frozen python scripts/score_submission.py \
+            --submission-dir /tmp/submission \
+            --allowlist .github/tournament/team_allowlist.json \
+            --ca-cert .github/tournament/public_keys/tournament_ca_cert.pem \
+            --scorer-cert .github/tournament/public_keys/scorer_cert.pem \
+            --scorer-key /tmp/private/scorer-key.pem \
+            --evaluation-bank /tmp/private/evaluation-bank.json \
+            --public-directory public \
+            --attempt "$ATTEMPT" \
+            --run-id "gh-${{ github.event.workflow_run.id }}" \
+            --output /tmp/private/scoring \
+            > /tmp/private/public-score.json
+
+      - name: Encrypt discovery feedback
+        if: env.ALREADY_SCORED != 'true'
+        working-directory: trusted
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/private/discovery-feedback.tar.gz \
+            -C /tmp/private/scoring/bundle .
+          TEAM_ID=$(jq -r .team_id /tmp/private/verified-submission.json)
+          TEAM_CERT=$(jq -r --arg team "$TEAM_ID" \
+            '.teams[] | select(.team_id == $team) | .cert_path' \
+            .github/tournament/team_allowlist.json)
+          test "$TEAM_CERT" != ""
+          scripts/encrypt_feedback.sh \
+            /tmp/private/discovery-feedback.tar.gz \
+            ".github/tournament/${TEAM_CERT}" \
+            /tmp/discovery-feedback.cms
+
+      - name: Upload encrypted feedback
+        if: env.ALREADY_SCORED != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: discovery-feedback-pr-${{ env.PR_NUMBER }}
+          path: /tmp/discovery-feedback.cms
+          retention-days: ${{ vars.BUNDLE_RETENTION_DAYS }}
+          if-no-files-found: error
+
+      - name: Update leaderboard with appended score
+        if: env.ALREADY_SCORED != 'true'
+        working-directory: trusted
+        env:
+          LEADERBOARD_BRANCH: ${{ vars.LEADERBOARD_BRANCH }}
+        run: |
+          set -euo pipefail
+          cp /tmp/private/events.jsonl /tmp/private/events-before-score.jsonl
+          IDENTITY=$(jq -r .submission_identity /tmp/private/reservation.json)
+          uv run --frozen python scripts/leaderboard_state.py publish \
+            --events /tmp/private/events.jsonl \
+            --summary /tmp/private/scoring/summary.json \
+            --submission-identity "$IDENTITY" \
+            --leaderboard /tmp/leaderboard/dashboard/leaderboard.json \
+            --challenge-name "HKPUG Opik 14-Day Challenge" \
+            --starts-at "${{ vars.CHALLENGE_START_AT }}" \
+            --ends-at "${{ vars.CHALLENGE_END_AT }}" \
+            --timezone "${{ vars.TOURNAMENT_TIMEZONE }}"
+          test ! -s /tmp/private/events-before-score.jsonl || \
+            ! cmp -s /tmp/private/events-before-score.jsonl /tmp/private/events.jsonl
+          openssl cms -encrypt -binary -aes-256-cbc \
+            -in /tmp/private/events.jsonl -outform DER \
+            -out /tmp/leaderboard/state/events.jsonl.cms \
+            .github/tournament/public_keys/scorer_cert.pem
+          cd /tmp/leaderboard
+          git add dashboard/leaderboard.json state/events.jsonl.cms
+          git commit -m "score: append completed attempt"
+          git push origin "HEAD:${LEADERBOARD_BRANCH}"
+
+      - name: Comment score and artifact link
+        if: env.ALREADY_SCORED != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SCORE=$(jq -r .overall_score /tmp/private/scoring/summary.json)
+          ATTEMPT=$(jq -r .attempt /tmp/private/reservation.json)
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Scored attempt ${ATTEMPT}/8: **${SCORE}/100**. [Download the team-encrypted discovery feedback from this workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${{ github.event.workflow_run.id }}). Holdout feedback remains aggregate-only."
+
+      - name: Remove decrypted material
+        if: always()
+        run: rm -rf /tmp/private /tmp/submission /tmp/discovery-feedback.cms
