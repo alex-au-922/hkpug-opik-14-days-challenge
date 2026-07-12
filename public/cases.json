@@ -15,7 +15,7 @@
       "id": "REF-02",
       "domain": "refunds",
       "difficulty": "standard",
-      "question": "The payment ledger for an activated HK Starter annual subscription shows one valid settled purchase and one additional settled duplicate created by confirmed checkout incident PAY-2026-0512. What remedy applies to the valid purchase, and what remedy applies to the duplicate settled charge?",
+      "question": "The payment ledger for an activated HK Starter annual subscription shows one valid subscription purchase with a settled charge and one additional settled duplicate charge caused by confirmed checkout incident PAY-2026-0512. Which charge should be refunded?",
       "context_files": [
         "contexts/company_handbook.md",
         "contexts/refunds.md"
@@ -85,7 +85,7 @@
       "id": "SUB-04",
       "domain": "subscriptions",
       "difficulty": "standard",
-      "question": "A customer cancelled during confirmed billing-portal incident BP-2026-0602. Before the paid-through time, the admin tried to reverse the cancellation, but the portal returned HTTP 503 and no billing event was written. Two days after expiry, the customer asks to reactivate and preserve the old renewal date. What actions and credits are permitted?",
+      "question": "An administrator attempted to reverse a scheduled cancellation before the paid-through expiry, but confirmed billing-portal incident BP-2026-0602 prevented the reversal and no billing event was written. The request is within seven days of expiry. May Incident Command restore the prior renewal date?",
       "context_files": [
         "contexts/company_handbook.md",
         "contexts/subscriptions.md"
@@ -225,7 +225,7 @@
       "id": "SEC-03",
       "domain": "security",
       "difficulty": "standard",
-      "question": "A researcher submits a reproducible vulnerability report containing real customer email addresses and live access tokens. What is the primary routing decision support should make for this report?",
+      "question": "A reproducible vulnerability report contains live access tokens. What immediate credential handling is required before Product Security review?",
       "context_files": [
         "contexts/company_handbook.md",
         "contexts/security.md"
@@ -485,7 +485,7 @@
       "id": "INT-04",
       "domain": "integrations",
       "difficulty": "standard",
-      "question": "The shared renewal_contact_email field was edited in HarbourCloud at 09:01:10 UTC and in the CRM at 09:02:25 UTC before the 09:03:00 UTC sync. Which conflict rule applies, and when is manual review needed?",
+      "question": "The customer-configurable shared field `renewal_contact_email` was changed in HarbourCloud at 09:01:10 UTC and in the CRM at 09:02:25 UTC, so both changes occurred within the same two-minute sync window before the 09:03:00 UTC sync. Which connector state applies?",
       "context_files": [
         "contexts/company_handbook.md",
         "contexts/integrations.md"

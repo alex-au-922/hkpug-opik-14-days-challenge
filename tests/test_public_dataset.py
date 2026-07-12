@@ -27,6 +27,32 @@ EXPECTED_DOMAINS = {
     "subscriptions",
 }
 EVIDENCE_ID_PATTERN = r"^[A-Z][A-Z0-9]+(?:-[A-Z0-9]+){2,}$"
+EXPECTED_REVIEWED_QUESTIONS = {
+    "REF-02": (
+        "The payment ledger for an activated HK Starter annual subscription shows "
+        "one valid subscription purchase with a settled charge and one additional "
+        "settled duplicate charge caused by confirmed checkout incident "
+        "PAY-2026-0512. Which charge should be refunded?"
+    ),
+    "SUB-04": (
+        "An administrator attempted to reverse a scheduled cancellation before the "
+        "paid-through expiry, but confirmed billing-portal incident BP-2026-0602 "
+        "prevented the reversal and no billing event was written. The request is "
+        "within seven days of expiry. May Incident Command restore the prior "
+        "renewal date?"
+    ),
+    "INT-04": (
+        "The customer-configurable shared field `renewal_contact_email` was changed "
+        "in HarbourCloud at 09:01:10 UTC and in the CRM at 09:02:25 UTC, so both "
+        "changes occurred within the same two-minute sync window before the "
+        "09:03:00 UTC sync. Which connector state applies?"
+    ),
+    "SEC-03": (
+        "A reproducible vulnerability report contains live access tokens. What "
+        "immediate credential handling is required before Product Security "
+        "review?"
+    ),
+}
 
 
 def estimate_tokens(text: str) -> int:
@@ -80,22 +106,19 @@ def test_average_rendered_context_stays_in_the_4400_token_band() -> None:
 def test_resolved_public_qa_requirements_are_present() -> None:
     cases = {case.id: case for case in load_public_cases()}
 
-    assert (
-        "one valid settled purchase and one additional settled duplicate"
-        in cases["REF-02"].question
-    )
-    assert "the admin tried to reverse the cancellation" in cases["SUB-04"].question
-    assert "returned HTTP 503" in cases["SUB-04"].question
     assert "read-only GitHub issue import" in cases["INT-01"].question
-    assert "renewal_contact_email" in cases["INT-04"].question
-    assert "09:01:10 UTC" in cases["INT-04"].question
-    assert "09:02:25 UTC" in cases["INT-04"].question
-    assert "09:03:00 UTC sync" in cases["INT-04"].question
     assert "authorization marked `reversal_requested`" in cases["REF-05"].question
     assert "destination administrator whose HarbourCloud user is already verified" in (
         cases["ACC-04"].question
     )
-    assert "primary routing decision" in cases["SEC-03"].question
+
+
+def test_reviewed_cases_use_deterministic_single_decision_questions() -> None:
+    cases = {case.id: case for case in load_public_cases()}
+
+    assert {
+        case_id: cases[case_id].question for case_id in EXPECTED_REVIEWED_QUESTIONS
+    } == EXPECTED_REVIEWED_QUESTIONS
 
 
 def test_render_messages_embeds_context_question_and_json_contract() -> None:
