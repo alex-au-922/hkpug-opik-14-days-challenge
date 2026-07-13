@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from hkpug_challenge.calibration import run_calibration
+from hkpug_challenge.calibration import run_calibration, validate_calibration_paths
 from hkpug_challenge.evaluation_bank import load_evaluation_bank
 from hkpug_challenge.fireworks import FireworksClient, validate_scoring_models
 
@@ -28,16 +28,28 @@ def main() -> int:
         return 1
 
     try:
+        repository_root = _authoritative_repository_root()
+        evaluation_bank_path = _repository_path(repository_root, args.evaluation_bank)
+        public_directory = _repository_path(repository_root, args.public_directory)
+        prompt_directory = _repository_path(repository_root, args.prompt_directory)
+        output_path = _repository_path(repository_root, args.output)
         candidate_model, judge_model = _scoring_models()
+        validate_calibration_paths(
+            repository_root=repository_root,
+            prompt_directory=prompt_directory,
+            public_directory=public_directory,
+            output_path=output_path,
+        )
         bank = load_evaluation_bank(
-            args.evaluation_bank,
-            public_directory=args.public_directory,
+            evaluation_bank_path,
+            public_directory=public_directory,
         )
         result = run_calibration(
             bank=bank,
-            prompt_directory=args.prompt_directory,
-            public_directory=args.public_directory,
-            output_path=args.output,
+            repository_root=repository_root,
+            prompt_directory=prompt_directory,
+            public_directory=public_directory,
+            output_path=output_path,
             candidate_client=FireworksClient(
                 api_key,
                 model=candidate_model,
@@ -74,6 +86,14 @@ def _scoring_models() -> tuple[str, str]:
         os.environ.get("FIREWORKS_MODEL", ""),
         os.environ.get("JUDGE_MODEL", ""),
     )
+
+
+def _authoritative_repository_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _repository_path(repository_root: Path, path: Path) -> Path:
+    return path if path.is_absolute() else repository_root / path
 
 
 def _log_progress(profile: str, current: int, total: int) -> None:

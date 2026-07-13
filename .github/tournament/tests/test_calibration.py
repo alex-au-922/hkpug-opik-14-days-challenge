@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import stat
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import FrozenInstanceError, dataclass
@@ -13,7 +14,7 @@ from typing import Any, cast
 
 import pytest
 
-from hkpug_challenge.calibration import run_calibration
+from hkpug_challenge.calibration import run_calibration, validate_calibration_paths
 from hkpug_challenge.evaluation_bank import (
     ARCHETYPES,
     EvaluationBank,
@@ -46,6 +47,15 @@ PRIVATE_PROMPT_BLOCKS = (
 )
 
 
+@pytest.fixture
+def repository_root(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / ".gitignore").write_text(".local/\n", encoding="utf-8")
+    return root
+
+
 class UnusedClient:
     def complete(
         self,
@@ -55,6 +65,23 @@ class UnusedClient:
         response_format: JsonObject | None = None,
     ) -> Completion:
         raise AssertionError("The injected scorer must not call Fireworks clients.")
+
+
+class StaticCompletionClient:
+    def __init__(self, content: str) -> None:
+        self._content = content
+        self.call_count = 0
+
+    def complete(
+        self,
+        messages: tuple[Message, ...],
+        *,
+        max_tokens: int,
+        response_format: JsonObject | None = None,
+    ) -> Completion:
+        del messages, max_tokens, response_format
+        self.call_count += 1
+        return Completion(content=self._content, prompt_tokens=1, completion_tokens=1)
 
 
 @dataclass(frozen=True)
@@ -82,10 +109,12 @@ class FakeScorer:
             400_000,
         ),
         return_holdout_details: bool = True,
+        fabricate_case_score: bool = False,
     ) -> None:
         self._bank = bank
         self._token_totals = token_totals
         self._return_holdout_details = return_holdout_details
+        self._fabricate_case_score = fabricate_case_score
         self.calls: list[ScoreCall] = []
 
     def __call__(
@@ -132,22 +161,27 @@ class FakeScorer:
         if not self._return_holdout_details:
             holdout = cast(dict[str, Any], result["holdout"])
             del holdout["cases"]
+        if self._fabricate_case_score:
+            discovery = cast(dict[str, Any], result["discovery"])
+            case_rows = cast(list[dict[str, Any]], discovery["cases"])
+            case_rows[0]["score"] = float(case_rows[0]["score"]) + 1.0
         return result
 
 
 def test_run_calibration_orders_profiles_and_requests_all_private_details(
-    tmp_path: Path,
+    repository_root: Path,
 ) -> None:
     bank = make_bank()
-    prompts = write_prompts(tmp_path)
+    prompts = write_prompts(repository_root)
     scorer = FakeScorer(bank)
     progress: list[tuple[str, int, int]] = []
 
     result = run_calibration(
         bank=bank,
+        repository_root=repository_root,
         prompt_directory=prompts,
-        public_directory=tmp_path / "public",
-        output_path=tmp_path / "round.json",
+        public_directory=repository_root / "public",
+        output_path=repository_root / ".local/calibration/round.json",
         candidate_client=UnusedClient(),
         judge_client=UnusedClient(),
         scorer=scorer,
@@ -174,9 +208,60 @@ def test_run_calibration_orders_profiles_and_requests_all_private_details(
     assert all(profile.holdout.case_count == 10 for profile in result.profiles)
 
 
-def test_run_calibration_rejects_non_cumulative_prompts(tmp_path: Path) -> None:
+def test_run_calibration_integrates_real_score_prompt_with_private_holdout(
+    repository_root: Path,
+) -> None:
     bank = make_bank()
-    prompts = write_prompts(tmp_path)
+    public_directory = write_public_contexts(repository_root)
+    candidate_client = StaticCompletionClient(
+        json.dumps(
+            {
+                "answer": "Private answer.",
+                "citations": ["ABC-DEF-001"],
+                "escalate": False,
+            }
+        )
+    )
+    judge_client = StaticCompletionClient(
+        json.dumps(
+            {
+                "answer_relevance": 100,
+                "instruction_following": 100,
+                "faithfulness": 100,
+                "required_points_met": [0],
+                "prohibited_claims_present": [],
+                "non_authoritative_evidence_used": [],
+                "reasons": {
+                    "answer_relevance": "The required point is present.",
+                    "instruction_following": "The output contract is followed.",
+                    "faithfulness": "The answer follows authoritative evidence.",
+                },
+            }
+        )
+    )
+
+    result = run_calibration(
+        bank=bank,
+        repository_root=repository_root,
+        prompt_directory=write_prompts(repository_root),
+        public_directory=public_directory,
+        output_path=repository_root / ".local/calibration/real-score-prompt.json",
+        candidate_client=candidate_client,
+        judge_client=judge_client,
+    )
+
+    assert candidate_client.call_count == 200
+    assert judge_client.call_count == 200
+    assert len(result.profiles) == 4
+    assert all(len(profile.diagnostics) == 50 for profile in result.profiles)
+    assert all(profile.holdout.case_count == 10 for profile in result.profiles)
+
+
+def test_run_calibration_rejects_non_cumulative_prompts(
+    repository_root: Path,
+) -> None:
+    bank = make_bank()
+    prompts = write_prompts(repository_root)
     (prompts / "attempt-03.txt").write_text(
         "PRIVATE REPLACEMENT STRATEGY",
         encoding="utf-8",
@@ -186,9 +271,10 @@ def test_run_calibration_rejects_non_cumulative_prompts(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="cumulative"):
         run_calibration(
             bank=bank,
+            repository_root=repository_root,
             prompt_directory=prompts,
-            public_directory=tmp_path / "public",
-            output_path=tmp_path / "round.json",
+            public_directory=repository_root / "public",
+            output_path=repository_root / ".local/calibration/round.json",
             candidate_client=UnusedClient(),
             judge_client=UnusedClient(),
             scorer=scorer,
@@ -197,18 +283,19 @@ def test_run_calibration_rejects_non_cumulative_prompts(tmp_path: Path) -> None:
     assert scorer.calls == []
 
 
-def test_run_calibration_requires_exact_prompt_files(tmp_path: Path) -> None:
+def test_run_calibration_requires_exact_prompt_files(repository_root: Path) -> None:
     bank = make_bank()
-    prompts = write_prompts(tmp_path)
+    prompts = write_prompts(repository_root)
     (prompts / "notes.txt").write_text("private notes", encoding="utf-8")
     scorer = FakeScorer(bank)
 
     with pytest.raises(ValueError, match="exactly four"):
         run_calibration(
             bank=bank,
+            repository_root=repository_root,
             prompt_directory=prompts,
-            public_directory=tmp_path / "public",
-            output_path=tmp_path / "round.json",
+            public_directory=repository_root / "public",
+            output_path=repository_root / ".local/calibration/round.json",
             candidate_client=UnusedClient(),
             judge_client=UnusedClient(),
             scorer=scorer,
@@ -218,34 +305,59 @@ def test_run_calibration_requires_exact_prompt_files(tmp_path: Path) -> None:
 
 
 def test_run_calibration_requires_returned_holdout_case_details(
-    tmp_path: Path,
+    repository_root: Path,
 ) -> None:
     bank = make_bank()
 
     with pytest.raises(ValueError, match="private holdout case detail"):
         run_calibration(
             bank=bank,
-            prompt_directory=write_prompts(tmp_path),
-            public_directory=tmp_path / "public",
-            output_path=tmp_path / "round.json",
+            repository_root=repository_root,
+            prompt_directory=write_prompts(repository_root),
+            public_directory=repository_root / "public",
+            output_path=repository_root / ".local/calibration/round.json",
             candidate_client=UnusedClient(),
             judge_client=UnusedClient(),
             scorer=FakeScorer(bank, return_holdout_details=False),
         )
 
 
-def test_run_calibration_rejects_output_inside_public_contexts(
-    tmp_path: Path,
+def test_run_calibration_rejects_fabricated_per_case_scores(
+    repository_root: Path,
 ) -> None:
     bank = make_bank()
-    public_directory = tmp_path / "public"
-    public_directory.mkdir()
+    scorer = FakeScorer(bank, fabricate_case_score=True)
+    output = repository_root / ".local/calibration/round.json"
+
+    with pytest.raises(ValueError, match="rounded sum of its criteria"):
+        run_calibration(
+            bank=bank,
+            repository_root=repository_root,
+            prompt_directory=write_prompts(repository_root),
+            public_directory=repository_root / "public",
+            output_path=output,
+            candidate_client=UnusedClient(),
+            judge_client=UnusedClient(),
+            scorer=scorer,
+        )
+
+    assert len(scorer.calls) == 1
+    assert not output.exists()
+
+
+def test_run_calibration_rejects_output_inside_public_contexts(
+    repository_root: Path,
+) -> None:
+    bank = make_bank()
+    public_directory = repository_root / ".local/public"
+    public_directory.mkdir(parents=True)
     scorer = FakeScorer(bank)
 
     with pytest.raises(ValueError, match="outside the public directory"):
         run_calibration(
             bank=bank,
-            prompt_directory=write_prompts(tmp_path),
+            repository_root=repository_root,
+            prompt_directory=write_prompts(repository_root),
             public_directory=public_directory,
             output_path=public_directory / "private-round.json",
             candidate_client=UnusedClient(),
@@ -257,15 +369,80 @@ def test_run_calibration_rejects_output_inside_public_contexts(
     assert list(public_directory.iterdir()) == []
 
 
+@pytest.mark.parametrize("unsafe_path", ["prompt", "output"])
+def test_validate_calibration_paths_rejects_paths_outside_repository_local_tree(
+    repository_root: Path,
+    unsafe_path: str,
+) -> None:
+    prompt_directory = write_prompts(repository_root)
+    output_path = repository_root / ".local/calibration/round.json"
+    if unsafe_path == "prompt":
+        prompt_directory = write_prompts(
+            repository_root,
+            directory=repository_root / "prompts",
+        )
+    else:
+        output_path = repository_root / "round.json"
+
+    with pytest.raises(ValueError, match="repository .local tree"):
+        validate_calibration_paths(
+            repository_root=repository_root,
+            prompt_directory=prompt_directory,
+            public_directory=repository_root / "public",
+            output_path=output_path,
+        )
+
+
+def test_validate_calibration_paths_rejects_non_ignored_local_tree(
+    repository_root: Path,
+) -> None:
+    prompt_directory = write_prompts(repository_root)
+    (repository_root / ".gitignore").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="not ignored"):
+        validate_calibration_paths(
+            repository_root=repository_root,
+            prompt_directory=prompt_directory,
+            public_directory=repository_root / "public",
+            output_path=repository_root / ".local/calibration/round.json",
+        )
+
+
+@pytest.mark.parametrize("tracked_path", ["prompt", "output"])
+def test_validate_calibration_paths_rejects_tracked_private_paths(
+    repository_root: Path,
+    tracked_path: str,
+) -> None:
+    prompt_directory = write_prompts(repository_root)
+    output_path = repository_root / ".local/calibration/round.json"
+    path_to_track = prompt_directory / "attempt-01.txt"
+    if tracked_path == "output":
+        output_path.write_text("tracked private report", encoding="utf-8")
+        path_to_track = output_path
+    subprocess.run(
+        ["git", "-C", str(repository_root), "add", "-f", str(path_to_track)],
+        check=True,
+    )
+
+    with pytest.raises(ValueError, match="tracked"):
+        validate_calibration_paths(
+            repository_root=repository_root,
+            prompt_directory=prompt_directory,
+            public_directory=repository_root / "public",
+            output_path=output_path,
+        )
+
+
 def test_run_calibration_aggregates_archetypes_case_deltas_and_gates(
-    tmp_path: Path,
+    repository_root: Path,
 ) -> None:
     bank = make_bank()
     result = run_calibration(
         bank=bank,
-        prompt_directory=write_prompts(tmp_path),
-        public_directory=tmp_path / "public",
-        output_path=tmp_path / "round.json",
+        repository_root=repository_root,
+        prompt_directory=write_prompts(repository_root),
+        public_directory=repository_root / "public",
+        output_path=repository_root / ".local/calibration/round.json",
         candidate_client=UnusedClient(),
         judge_client=UnusedClient(),
         scorer=FakeScorer(bank),
@@ -316,7 +493,7 @@ def test_run_calibration_aggregates_archetypes_case_deltas_and_gates(
     ],
 )
 def test_run_calibration_reports_hard_and_target_token_gates(
-    tmp_path: Path,
+    repository_root: Path,
     token_total: int,
     hard_passed: bool,
     target_passed: bool,
@@ -324,9 +501,10 @@ def test_run_calibration_reports_hard_and_target_token_gates(
     bank = make_bank()
     result = run_calibration(
         bank=bank,
-        prompt_directory=write_prompts(tmp_path),
-        public_directory=tmp_path / "public",
-        output_path=tmp_path / "round.json",
+        repository_root=repository_root,
+        prompt_directory=write_prompts(repository_root),
+        public_directory=repository_root / "public",
+        output_path=repository_root / ".local/calibration/round.json",
         candidate_client=UnusedClient(),
         judge_client=UnusedClient(),
         scorer=FakeScorer(bank, token_totals=(400_000, 400_000, token_total, 400_000)),
@@ -340,18 +518,21 @@ def test_run_calibration_reports_hard_and_target_token_gates(
     assert result.passed is (hard_passed and target_passed)
 
 
-def test_run_calibration_writes_redacted_mode_0600_report(tmp_path: Path) -> None:
+def test_run_calibration_writes_mode_0600_report_with_redacted_diagnostics(
+    repository_root: Path,
+) -> None:
     bank = make_bank()
-    prompts = write_prompts(tmp_path)
-    output = tmp_path / "calibration" / "round.json"
-    output.parent.mkdir()
+    prompts = write_prompts(repository_root)
+    output = repository_root / ".local/calibration/round.json"
+    output.parent.mkdir(exist_ok=True)
     output.write_text("old private report", encoding="utf-8")
     output.chmod(0o644)
 
     result = run_calibration(
         bank=bank,
+        repository_root=repository_root,
         prompt_directory=prompts,
-        public_directory=tmp_path / "public",
+        public_directory=repository_root / "public",
         output_path=output,
         candidate_client=UnusedClient(),
         judge_client=UnusedClient(),
@@ -362,10 +543,27 @@ def test_run_calibration_writes_redacted_mode_0600_report(tmp_path: Path) -> Non
     report_text = output.read_text(encoding="utf-8")
     report = json.loads(report_text)
     assert "PRIVATE OUTPUT CONTRACT ALPHA" not in report_text
-    assert "PRIVATE CASE OUTPUT MUST NOT LEAK" not in report_text
+    assert "PRIVATE CASE INPUT MUST NOT LEAK" not in report_text
+    assert "PRIVATE CONTEXT MUST NOT LEAK" not in report_text
+    assert "PRIVATE REFERENCE MUST NOT LEAK" not in report_text
+    assert "PRIVATE RUBRIC MUST NOT LEAK" not in report_text
+    assert "PRIVATE PARTICIPANT PROMPT MUST NOT LEAK" not in report_text
+    assert "Private calibration question." not in report_text
     assert [profile["prompt_sha256"] for profile in report["profiles"]] == [
         sha256(cumulative_prompt(index).encode()).hexdigest() for index in range(1, 5)
     ]
+    assert set(report["diagnostics"]) == set(PROFILE_NAMES)
+    first_case_id = bank.cases[0].case_id
+    diagnostic = report["diagnostics"]["output_contract"][first_case_id]
+    assert set(diagnostic) == {"output", "criteria", "reasons", "judge"}
+    assert diagnostic["output"] == "PRIVATE CASE OUTPUT MUST NOT LEAK"
+    assert diagnostic["criteria"] == make_case_result(bank.cases[0], 1)["criteria"]
+    assert diagnostic["reasons"] == make_case_result(bank.cases[0], 1)["reasons"]
+    assert diagnostic["judge"] == make_case_result(bank.cases[0], 1)["judge"]
+    assert all(
+        set(profile_diagnostics) == {case.case_id for case in bank.cases}
+        for profile_diagnostics in report["diagnostics"].values()
+    )
     assert len(report["case_deltas"]) == 50
     assert report["passed"] is True
     with pytest.raises(FrozenInstanceError):
@@ -444,6 +642,47 @@ def test_cli_rejects_wrong_models_before_loading_private_inputs(
     assert "FIREWORKS_MODEL must be" in capsys.readouterr().err
 
 
+def test_cli_rejects_unsafe_paths_before_loading_private_inputs(
+    repository_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = load_calibration_script()
+    monkeypatch.setenv("FIREWORKS_API_KEY", "private-key")
+    monkeypatch.setenv("FIREWORKS_MODEL", FIREWORKS_MODEL)
+    monkeypatch.setenv("JUDGE_MODEL", JUDGE_MODEL)
+    monkeypatch.setattr(
+        module,
+        "_authoritative_repository_root",
+        lambda: repository_root,
+        raising=False,
+    )
+
+    def fail_private_load(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        pytest.fail("private bank must not be loaded")
+
+    monkeypatch.setattr(module, "load_evaluation_bank", fail_private_load)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_calibration.py",
+            "--evaluation-bank",
+            str(repository_root / ".local/evaluation/evaluation_bank.json"),
+            "--public-directory",
+            str(repository_root / "public"),
+            "--prompt-directory",
+            str(write_prompts(repository_root)),
+            "--output",
+            str(repository_root / "unsafe-round.json"),
+        ],
+    )
+
+    assert module.main() == 1
+    assert "repository .local tree" in capsys.readouterr().err
+
+
 def make_bank() -> EvaluationBank:
     cases: list[EvaluationCase] = []
     for archetype in ARCHETYPES:
@@ -479,15 +718,30 @@ def make_bank() -> EvaluationBank:
     )
 
 
-def write_prompts(tmp_path: Path) -> Path:
-    prompt_directory = tmp_path / "prompts"
-    prompt_directory.mkdir(exist_ok=True)
+def write_prompts(repository_root: Path, *, directory: Path | None = None) -> Path:
+    prompt_directory = directory or repository_root / ".local/calibration/prompts"
+    prompt_directory.mkdir(parents=True, exist_ok=True)
     for index, filename in enumerate(PROMPT_FILENAMES, start=1):
         (prompt_directory / filename).write_text(
             cumulative_prompt(index) + "\n",
             encoding="utf-8",
         )
     return prompt_directory
+
+
+def write_public_contexts(repository_root: Path) -> Path:
+    public_directory = repository_root / "public"
+    context_directory = public_directory / "contexts"
+    context_directory.mkdir(parents=True)
+    (context_directory / "a.md").write_text(
+        "# Primary\n\n## [ABC-DEF-001]\nPrivate answer.\n",
+        encoding="utf-8",
+    )
+    (context_directory / "b.md").write_text(
+        "# Secondary\n\n## [ABC-DEF-002]\nSupporting detail.\n",
+        encoding="utf-8",
+    )
+    return public_directory
 
 
 def cumulative_prompt(block_count: int) -> str:
@@ -571,15 +825,46 @@ def make_case_result(case: EvaluationCase, attempt: int) -> dict[str, Any]:
         criteria["answer_relevance"] += 6.0
         if case.archetype == "ambiguous_authority_or_escalation":
             criteria["escalation"] = 10.0
+    faithfulness_cap = (
+        "Faithfulness tier capped from 100 to 50: prohibited claim indexes: 0."
+    )
     return {
         "case_id": case.case_id,
         "domain": case.domain,
         "difficulty": case.difficulty,
-        "input": {"question": "PRIVATE CASE INPUT MUST NOT LEAK"},
+        "input": {
+            "question": "PRIVATE CASE INPUT MUST NOT LEAK",
+            "context": "PRIVATE CONTEXT MUST NOT LEAK",
+        },
         "output": "PRIVATE CASE OUTPUT MUST NOT LEAK",
         "criteria": criteria,
         "score": round(sum(criteria.values()), 2),
-        "reasons": {"faithfulness": "PRIVATE REASON MUST NOT LEAK"},
+        "reasons": {
+            "answer_relevance": "PRIVATE RELEVANCE REASON",
+            "instruction_following": "PRIVATE INSTRUCTION REASON",
+            "faithfulness": faithfulness_cap,
+        },
+        "judge": {
+            "raw_tiers": {
+                "answer_relevance": 25,
+                "instruction_following": 0,
+                "faithfulness": 100,
+            },
+            "effective_tiers": {
+                "answer_relevance": 25,
+                "instruction_following": 0,
+                "faithfulness": 50,
+            },
+            "audit": {
+                "required_points_met": [0],
+                "prohibited_claims_present": [0],
+                "non_authoritative_evidence_used": [],
+            },
+            "cap_explanations": {"faithfulness": faithfulness_cap},
+        },
+        "reference": "PRIVATE REFERENCE MUST NOT LEAK",
+        "rubric": "PRIVATE RUBRIC MUST NOT LEAK",
+        "participant_prompt": "PRIVATE PARTICIPANT PROMPT MUST NOT LEAK",
     }
 
 

@@ -20,6 +20,7 @@ from hkpug_challenge.fireworks import (
 from hkpug_challenge.models import Message
 from hkpug_challenge.playground import FIXED_SYSTEM_PROMPT
 from hkpug_challenge.scoring import MAX_RUN_TOKENS, score_prompt
+from hkpug_challenge.traces import build_trace_bundle
 
 
 JUDGE_MODEL = "accounts/fireworks/models/qwen3p7-plus"
@@ -161,6 +162,9 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
     ):
         assert audit_field not in json.dumps(JUDGE_RESPONSE_FORMAT)
         assert audit_field in json.dumps(SCORING_JUDGE_RESPONSE_FORMAT)
+    scoring_schema = json.dumps(SCORING_JUDGE_RESPONSE_FORMAT)
+    assert '"minimum"' not in scoring_schema
+    assert '"uniqueItems"' not in scoring_schema
     assert result["model"] == FIREWORKS_MODEL
     assert result["judge_model"] == JUDGE_MODEL
     assert result["overall_score"] == 88.75
@@ -186,6 +190,24 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
         },
     }
     assert result["call_count"] == 100
+    assert result["discovery"]["cases"][0]["judge"] == {
+        "raw_tiers": {
+            "answer_relevance": 75,
+            "instruction_following": 100,
+            "faithfulness": 75,
+        },
+        "effective_tiers": {
+            "answer_relevance": 75,
+            "instruction_following": 100,
+            "faithfulness": 75,
+        },
+        "audit": {
+            "required_points_met": [0, 1],
+            "prohibited_claims_present": [],
+            "non_authoritative_evidence_used": [],
+        },
+        "cap_explanations": {},
+    }
     serialized = json.dumps(result)
     assert "Use evidence and return strict JSON" not in serialized
     assert "The approved outcome is Alpha." in serialized
@@ -325,13 +347,85 @@ def test_score_prompt_caps_faithfulness_for_semantic_hazards(
     assert result["holdout"]["criteria"]["faithfulness"] == 12.5
 
 
+def test_score_prompt_retains_cap_audit_and_publishes_cap_safe_reasons(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    response = json.loads(
+        judge_response(
+            100,
+            100,
+            100,
+            required_points_met=(0,),
+            prohibited_claims_present=(0,),
+            non_authoritative_evidence_used=("HB-GOV-001",),
+        )
+    )
+    response["reasons"] = {
+        "answer_relevance": "Fully met.",
+        "instruction_following": "Fully met.",
+        "faithfulness": "Fully met.",
+    }
+
+    result = score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-auditable-caps",
+        participant_prompt="Return JSON.",
+        cases=make_cases(),
+        public_directory=public,
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=FakeCompletionClient([json.dumps(response)] * 50),
+    )
+
+    case = result["discovery"]["cases"][0]
+    assert case["judge"]["raw_tiers"] == {
+        "answer_relevance": 100,
+        "instruction_following": 100,
+        "faithfulness": 100,
+    }
+    assert case["judge"]["effective_tiers"] == {
+        "answer_relevance": 50,
+        "instruction_following": 100,
+        "faithfulness": 50,
+    }
+    assert case["judge"]["audit"] == {
+        "required_points_met": [0],
+        "prohibited_claims_present": [0],
+        "non_authoritative_evidence_used": ["HB-GOV-001"],
+    }
+    cap_explanations = case["judge"]["cap_explanations"]
+    assert set(cap_explanations) == {"answer_relevance", "faithfulness"}
+    assert "capped from 100 to 50" in cap_explanations["answer_relevance"]
+    assert "1 of 2 required points" in cap_explanations["answer_relevance"]
+    assert "capped from 100 to 50" in cap_explanations["faithfulness"]
+    assert "prohibited claim indexes: 0" in cap_explanations["faithfulness"]
+    assert (
+        "non-authoritative evidence IDs: HB-GOV-001" in cap_explanations["faithfulness"]
+    )
+    assert case["reasons"]["answer_relevance"] == cap_explanations["answer_relevance"]
+    assert case["reasons"]["faithfulness"] == cap_explanations["faithfulness"]
+    assert "fully met" not in case["reasons"]["answer_relevance"].lower()
+    assert "fully met" not in case["reasons"]["faithfulness"].lower()
+
+    bundle = build_trace_bundle(result)
+    published_reasons = {
+        item["name"]: item["reason"] for item in bundle["trace_feedback.json"]["scores"]
+    }
+    assert published_reasons["answer_relevance"] == cap_explanations["answer_relevance"]
+    assert published_reasons["faithfulness"] == cap_explanations["faithfulness"]
+
+
 @pytest.mark.parametrize(
     ("audit_field", "audit_value"),
     [
         ("required_points_met", [-1]),
         ("required_points_met", [2]),
+        ("required_points_met", [0, 0]),
         ("prohibited_claims_present", [1]),
+        ("prohibited_claims_present", [0, 0]),
         ("non_authoritative_evidence_used", ["DOM-POL-001"]),
+        ("non_authoritative_evidence_used", ["HB-GOV-001", "HB-GOV-001"]),
     ],
 )
 def test_score_prompt_rejects_semantic_audit_values_outside_case_rubric(

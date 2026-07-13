@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 from collections import Counter
 from collections.abc import Callable, Mapping
@@ -19,6 +20,7 @@ from .evaluation_bank import (
 )
 from .fireworks import (
     FIREWORKS_MODEL,
+    JUDGE_TIERS,
     JUDGE_MODEL,
     CompletionClient,
     validate_scoring_models,
@@ -40,7 +42,14 @@ CONFLICT_ARCHETYPES = (
 )
 AMBIGUOUS_ARCHETYPE = "ambiguous_authority_or_escalation"
 Criteria = tuple[tuple[str, float], ...]
+TextFields = tuple[tuple[str, str], ...]
+TierFields = tuple[tuple[str, int], ...]
 ProgressCallback = Callable[[str, int, int], None]
+JUDGE_CRITERIA = (
+    "answer_relevance",
+    "instruction_following",
+    "faithfulness",
+)
 
 
 class CalibrationScorer(Protocol):
@@ -102,6 +111,25 @@ class TokenUsage:
 
 
 @dataclass(frozen=True)
+class JudgeDiagnostic:
+    raw_tiers: TierFields
+    effective_tiers: TierFields
+    required_points_met: tuple[int, ...]
+    prohibited_claims_present: tuple[int, ...]
+    non_authoritative_evidence_used: tuple[str, ...]
+    cap_explanations: TextFields
+
+
+@dataclass(frozen=True)
+class CaseDiagnostic:
+    case_id: str
+    output: str
+    criteria: Criteria
+    reasons: TextFields
+    judge: JudgeDiagnostic
+
+
+@dataclass(frozen=True)
 class CalibrationProfileResult:
     name: str
     prompt_sha256: str
@@ -109,6 +137,7 @@ class CalibrationProfileResult:
     discovery: PartitionAggregate
     holdout: PartitionAggregate
     archetypes: tuple[ArchetypeAggregate, ...]
+    diagnostics: tuple[CaseDiagnostic, ...]
     token_usage: TokenUsage
     call_count: int
 
@@ -152,6 +181,13 @@ class CalibrationResult:
             "judge_model": self.judge_model,
             "profile_order": [profile.name for profile in self.profiles],
             "profiles": [_profile_to_dict(profile) for profile in self.profiles],
+            "diagnostics": {
+                profile.name: {
+                    diagnostic.case_id: _case_diagnostic_to_dict(diagnostic)
+                    for diagnostic in profile.diagnostics
+                }
+                for profile in self.profiles
+            },
             "case_deltas": [_case_delta_to_dict(delta) for delta in self.case_deltas],
             "gates": {
                 gate.name: {
@@ -171,11 +207,13 @@ class _CaseScore:
     case: EvaluationCase
     criteria: Criteria
     score: float
+    diagnostic: CaseDiagnostic
 
 
 def run_calibration(
     *,
     bank: EvaluationBank,
+    repository_root: Path,
     prompt_directory: Path,
     public_directory: Path,
     output_path: Path,
@@ -186,12 +224,17 @@ def run_calibration(
     scorer: CalibrationScorer | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> CalibrationResult:
+    prompt_directory, output_path = validate_calibration_paths(
+        repository_root=repository_root,
+        prompt_directory=prompt_directory,
+        public_directory=public_directory,
+        output_path=output_path,
+    )
     candidate_model, judge_model = validate_scoring_models(
         candidate_model,
         judge_model,
     )
     _validate_bank(bank)
-    _validate_output_path(output_path, public_directory, prompt_directory)
     profiles = _load_profiles(prompt_directory)
     score = scorer or cast(CalibrationScorer, score_prompt)
     profile_results: list[CalibrationProfileResult] = []
@@ -260,6 +303,93 @@ def _validate_bank(bank: EvaluationBank) -> None:
         raise ValueError(
             "Calibration requires exactly 8 discovery and 2 holdout cases for each archetype."
         )
+
+
+def validate_calibration_paths(
+    *,
+    repository_root: Path,
+    prompt_directory: Path,
+    public_directory: Path,
+    output_path: Path,
+) -> tuple[Path, Path]:
+    root = repository_root.resolve()
+    completed = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0 or Path(completed.stdout.strip()).resolve() != root:
+        raise ValueError(
+            "Calibration repository root must be the Git repository top level."
+        )
+
+    local_root = root / ".local"
+    prompt_root = _absolute_path(prompt_directory).resolve()
+    output = _absolute_path(output_path).resolve()
+    for label, path in (("prompt directory", prompt_root), ("output", output)):
+        if path == local_root or not path.is_relative_to(local_root):
+            raise ValueError(
+                "Calibration prompt directory and output must be under the "
+                "repository .local tree."
+            )
+        relative_path = path.relative_to(root)
+        _assert_path_is_untracked(root, relative_path, label)
+        _assert_path_is_ignored(root, relative_path, label)
+
+    _validate_output_path(output, public_directory, prompt_root)
+    return prompt_root, output
+
+
+def _absolute_path(path: Path) -> Path:
+    return path if path.is_absolute() else Path.cwd() / path
+
+
+def _assert_path_is_untracked(
+    repository_root: Path,
+    relative_path: Path,
+    label: str,
+) -> None:
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_root),
+            "ls-files",
+            "--",
+            str(relative_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise ValueError("Unable to validate calibration paths against Git tracking.")
+    if completed.stdout.strip():
+        raise ValueError(f"Calibration {label} path is tracked by Git.")
+
+
+def _assert_path_is_ignored(
+    repository_root: Path,
+    relative_path: Path,
+    label: str,
+) -> None:
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_root),
+            "check-ignore",
+            "-q",
+            "--",
+            str(relative_path),
+        ],
+        check=False,
+    )
+    if completed.returncode == 1:
+        raise ValueError(f"Calibration {label} path is not ignored by Git.")
+    if completed.returncode != 0:
+        raise ValueError("Unable to validate calibration paths with git check-ignore.")
 
 
 def _validate_output_path(
@@ -382,6 +512,9 @@ def _parse_profile_result(
             discovery=discovery,
             holdout=holdout,
             archetypes=_aggregate_archetypes(all_case_scores),
+            diagnostics=tuple(
+                all_case_scores[case.case_id].diagnostic for case in bank.cases
+            ),
             token_usage=_parse_token_usage(raw_result),
             call_count=call_count,
         ),
@@ -425,10 +558,23 @@ def _parse_partition(
             )
         if case_id in scores:
             raise ValueError(f"Calibration case detail repeats case {case_id}.")
+        criteria = _parse_criteria(raw_case)
+        score = _required_number(raw_case, "score")
+        if score != round(sum(value for _, value in criteria), 2):
+            raise ValueError(
+                f"Calibration case {case_id} score must equal the rounded sum of "
+                "its criteria."
+            )
+        diagnostic = _parse_case_diagnostic(
+            raw_case,
+            case=case,
+            criteria=criteria,
+        )
         scores[case_id] = _CaseScore(
             case=case,
-            criteria=_parse_criteria(raw_case),
-            score=_required_number(raw_case, "score"),
+            criteria=criteria,
+            score=score,
+            diagnostic=diagnostic,
         )
     if set(scores) != set(expected_by_id):
         raise ValueError(f"Calibration {partition} case detail is incomplete.")
@@ -449,6 +595,160 @@ def _parse_criteria(value: Mapping[str, object]) -> Criteria:
     return tuple(
         (name, _required_number(raw_criteria, name)) for name in sorted(raw_criteria)
     )
+
+
+def _parse_case_diagnostic(
+    raw_case: Mapping[str, object],
+    *,
+    case: EvaluationCase,
+    criteria: Criteria,
+) -> CaseDiagnostic:
+    reasons = _parse_text_fields(raw_case, "reasons", JUDGE_CRITERIA)
+    return CaseDiagnostic(
+        case_id=case.case_id,
+        output=_required_text(raw_case, "output"),
+        criteria=criteria,
+        reasons=reasons,
+        judge=_parse_judge_diagnostic(
+            raw_case,
+            case=case,
+            reasons=dict(reasons),
+        ),
+    )
+
+
+def _parse_judge_diagnostic(
+    raw_case: Mapping[str, object],
+    *,
+    case: EvaluationCase,
+    reasons: Mapping[str, str],
+) -> JudgeDiagnostic:
+    raw_judge = _required_mapping(raw_case, "judge")
+    expected_judge_fields = {
+        "raw_tiers",
+        "effective_tiers",
+        "audit",
+        "cap_explanations",
+    }
+    if set(raw_judge) != expected_judge_fields:
+        raise ValueError("Calibration judge diagnostic fields are incomplete.")
+
+    raw_tiers = _parse_tier_fields(raw_judge, "raw_tiers")
+    effective_tiers = _parse_tier_fields(raw_judge, "effective_tiers")
+    raw_tier_map = dict(raw_tiers)
+    effective_tier_map = dict(effective_tiers)
+    if any(effective_tier_map[name] > raw_tier_map[name] for name in JUDGE_CRITERIA):
+        raise ValueError("Calibration effective judge tiers cannot exceed raw tiers.")
+
+    audit = _required_mapping(raw_judge, "audit")
+    expected_audit_fields = {
+        "required_points_met",
+        "prohibited_claims_present",
+        "non_authoritative_evidence_used",
+    }
+    if set(audit) != expected_audit_fields:
+        raise ValueError("Calibration judge audit fields are incomplete.")
+    required_points_met = _parse_audit_indexes(
+        audit,
+        "required_points_met",
+        upper_bound=len(case.rubric.required_points),
+    )
+    prohibited_claims_present = _parse_audit_indexes(
+        audit,
+        "prohibited_claims_present",
+        upper_bound=len(case.rubric.prohibited_claims),
+    )
+    non_authoritative_evidence_used = _parse_audit_evidence(
+        audit,
+        allowed=frozenset(case.rubric.non_authoritative_evidence),
+    )
+
+    raw_explanations = _required_mapping(raw_judge, "cap_explanations")
+    capped_criteria = tuple(
+        name for name in JUDGE_CRITERIA if effective_tier_map[name] < raw_tier_map[name]
+    )
+    if set(raw_explanations) != set(capped_criteria):
+        raise ValueError(
+            "Calibration cap explanations must match every reduced judge tier."
+        )
+    cap_explanations = _parse_text_fields(
+        raw_judge,
+        "cap_explanations",
+        capped_criteria,
+    )
+    if any(reasons[name] != explanation for name, explanation in cap_explanations):
+        raise ValueError(
+            "Calibration capped judge reasons must match their cap explanations."
+        )
+    return JudgeDiagnostic(
+        raw_tiers=raw_tiers,
+        effective_tiers=effective_tiers,
+        required_points_met=required_points_met,
+        prohibited_claims_present=prohibited_claims_present,
+        non_authoritative_evidence_used=non_authoritative_evidence_used,
+        cap_explanations=cap_explanations,
+    )
+
+
+def _parse_tier_fields(value: Mapping[str, object], key: str) -> TierFields:
+    raw_tiers = _required_mapping(value, key)
+    if set(raw_tiers) != set(JUDGE_CRITERIA):
+        raise ValueError("Calibration judge tier fields are incomplete.")
+    tiers = tuple((name, _required_int(raw_tiers, name)) for name in JUDGE_CRITERIA)
+    if any(tier not in JUDGE_TIERS for _, tier in tiers):
+        raise ValueError(f"Calibration judge tiers must be one of {JUDGE_TIERS}.")
+    return tiers
+
+
+def _parse_text_fields(
+    value: Mapping[str, object],
+    key: str,
+    field_names: tuple[str, ...],
+) -> TextFields:
+    raw_fields = _required_mapping(value, key)
+    if set(raw_fields) != set(field_names):
+        raise ValueError(f"Calibration {key} fields are incomplete.")
+    return tuple((name, _required_string(raw_fields, name)) for name in field_names)
+
+
+def _parse_audit_indexes(
+    audit: Mapping[str, object],
+    key: str,
+    *,
+    upper_bound: int,
+) -> tuple[int, ...]:
+    raw_values = audit.get(key)
+    if not isinstance(raw_values, list):
+        raise ValueError(f"Calibration judge audit field {key} must be an array.")
+    values: list[int] = []
+    for value in cast(list[object], raw_values):
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"Calibration judge audit field {key} must use integers.")
+        values.append(value)
+    if len(values) != len(set(values)) or any(
+        value < 0 or value >= upper_bound for value in values
+    ):
+        raise ValueError(f"Calibration judge audit field {key} is invalid.")
+    return tuple(values)
+
+
+def _parse_audit_evidence(
+    audit: Mapping[str, object],
+    *,
+    allowed: frozenset[str],
+) -> tuple[str, ...]:
+    key = "non_authoritative_evidence_used"
+    raw_values = audit.get(key)
+    if not isinstance(raw_values, list):
+        raise ValueError(f"Calibration judge audit field {key} must be an array.")
+    values: list[str] = []
+    for value in cast(list[object], raw_values):
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"Calibration judge audit field {key} must use strings.")
+        values.append(value)
+    if len(values) != len(set(values)) or not set(values).issubset(allowed):
+        raise ValueError(f"Calibration judge audit field {key} is invalid.")
+    return tuple(values)
 
 
 def _validate_aggregate(
@@ -706,6 +1006,13 @@ def _required_string(value: Mapping[str, object], key: str) -> str:
     return item
 
 
+def _required_text(value: Mapping[str, object], key: str) -> str:
+    item = value.get(key)
+    if not isinstance(item, str):
+        raise ValueError(f"Calibration scorer field {key} must be a string.")
+    return item
+
+
 def _required_int(value: Mapping[str, object], key: str) -> int:
     item = value.get(key)
     if not isinstance(item, int) or isinstance(item, bool):
@@ -761,6 +1068,27 @@ def _token_bucket_to_dict(bucket: TokenBucket) -> dict[str, int]:
         "prompt_tokens": bucket.prompt_tokens,
         "completion_tokens": bucket.completion_tokens,
         "total_tokens": bucket.total_tokens,
+    }
+
+
+def _case_diagnostic_to_dict(diagnostic: CaseDiagnostic) -> dict[str, object]:
+    judge = diagnostic.judge
+    return {
+        "output": diagnostic.output,
+        "criteria": dict(diagnostic.criteria),
+        "reasons": dict(diagnostic.reasons),
+        "judge": {
+            "raw_tiers": dict(judge.raw_tiers),
+            "effective_tiers": dict(judge.effective_tiers),
+            "audit": {
+                "required_points_met": list(judge.required_points_met),
+                "prohibited_claims_present": list(judge.prohibited_claims_present),
+                "non_authoritative_evidence_used": list(
+                    judge.non_authoritative_evidence_used
+                ),
+            },
+            "cap_explanations": dict(judge.cap_explanations),
+        },
     }
 
 

@@ -242,10 +242,23 @@ def _score_case(
     )
     judge_completed_at = _timestamp()
     judge = _parse_judge(judge_completion.content, case=case)
+    raw_judge_scores = _raw_judge_scores(judge)
     judge_scores = _capped_judge_scores(case=case, judge=judge)
+    cap_explanations = _cap_explanations(
+        case=case,
+        judge=judge,
+        raw_scores=raw_judge_scores,
+        effective_scores=judge_scores,
+    )
     criteria = dict(deterministic_scores)
     for name, weight in JUDGE_WEIGHTS.items():
         criteria[name] = round(float(judge_scores[name]) * weight, 2)
+    reasons = {
+        "answer_relevance": judge.reasons.answer_relevance,
+        "instruction_following": judge.reasons.instruction_following,
+        "faithfulness": judge.reasons.faithfulness,
+    }
+    reasons.update(cap_explanations)
 
     return {
         "partition": case.partition,
@@ -256,7 +269,19 @@ def _score_case(
         "output": answer_completion.content,
         "criteria": criteria,
         "score": round(sum(criteria.values()), 2),
-        "reasons": judge.reasons.model_dump(),
+        "reasons": reasons,
+        "judge": {
+            "raw_tiers": raw_judge_scores,
+            "effective_tiers": judge_scores,
+            "audit": {
+                "required_points_met": list(judge.required_points_met),
+                "prohibited_claims_present": list(judge.prohibited_claims_present),
+                "non_authoritative_evidence_used": list(
+                    judge.non_authoritative_evidence_used
+                ),
+            },
+            "cap_explanations": cap_explanations,
+        },
         "usage": {
             "answer_prompt_tokens": answer_completion.prompt_tokens,
             "answer_completion_tokens": answer_completion.completion_tokens,
@@ -466,6 +491,49 @@ def _capped_judge_scores(
         "instruction_following": judge.instruction_following,
         "faithfulness": min(judge.faithfulness, faithfulness_cap),
     }
+
+
+def _raw_judge_scores(judge: _JudgePayload) -> dict[str, int]:
+    return {
+        "answer_relevance": judge.answer_relevance,
+        "instruction_following": judge.instruction_following,
+        "faithfulness": judge.faithfulness,
+    }
+
+
+def _cap_explanations(
+    *,
+    case: EvaluationCase,
+    judge: _JudgePayload,
+    raw_scores: dict[str, int],
+    effective_scores: dict[str, int],
+) -> dict[str, str]:
+    explanations: dict[str, str] = {}
+    raw_relevance = raw_scores["answer_relevance"]
+    effective_relevance = effective_scores["answer_relevance"]
+    if effective_relevance < raw_relevance:
+        explanations["answer_relevance"] = (
+            f"Answer relevance tier capped from {raw_relevance} to "
+            f"{effective_relevance}: {len(judge.required_points_met)} of "
+            f"{len(case.rubric.required_points)} required points were materially "
+            "satisfied."
+        )
+
+    raw_faithfulness = raw_scores["faithfulness"]
+    effective_faithfulness = effective_scores["faithfulness"]
+    if effective_faithfulness < raw_faithfulness:
+        hazards: list[str] = []
+        if judge.prohibited_claims_present:
+            indexes = ", ".join(str(index) for index in judge.prohibited_claims_present)
+            hazards.append(f"prohibited claim indexes: {indexes}")
+        if judge.non_authoritative_evidence_used:
+            evidence_ids = ", ".join(judge.non_authoritative_evidence_used)
+            hazards.append(f"non-authoritative evidence IDs: {evidence_ids}")
+        explanations["faithfulness"] = (
+            f"Faithfulness tier capped from {raw_faithfulness} to "
+            f"{effective_faithfulness}: {'; '.join(hazards)}."
+        )
+    return explanations
 
 
 def _empty_token_usage() -> dict[str, dict[str, int]]:

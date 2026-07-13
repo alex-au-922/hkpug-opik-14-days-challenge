@@ -32,18 +32,15 @@ def _judge_response_format(*, semantic_audit: bool) -> JsonObject:
             {
                 "required_points_met": {
                     "type": "array",
-                    "items": {"type": "integer", "minimum": 0},
-                    "uniqueItems": True,
+                    "items": {"type": "integer"},
                 },
                 "prohibited_claims_present": {
                     "type": "array",
-                    "items": {"type": "integer", "minimum": 0},
-                    "uniqueItems": True,
+                    "items": {"type": "integer"},
                 },
                 "non_authoritative_evidence_used": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "uniqueItems": True,
                 },
             }
         )
