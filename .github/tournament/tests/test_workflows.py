@@ -358,7 +358,7 @@ def test_trusted_scoring_gates_secrets_and_atomically_reserves_eight_attempts() 
         r"(?m)^\s+MAX_ATTEMPTS:\s*\$\{\{\s*vars\.MAX_ATTEMPTS\s*}}\s*$",
         text,
     )
-    assert re.search(r"(?m)^\s+MAX_DAILY_ATTEMPTS:\s*2\s*$", text)
+    assert re.search(r"(?m)^\s+MAX_DAILY_ATTEMPTS:\s*4\s*$", text)
     assert_concurrency(
         text,
         group_pattern=r"group:\s*(?:tournament-)?(?:score|scoring|attempt)[a-z-]*\s*$",
@@ -372,7 +372,7 @@ def test_trusted_scoring_gates_secrets_and_atomically_reserves_eight_attempts() 
     assert "MAX_DAILY_ATTEMPTS" in reserve_step
     assert re.search(r"(?:==|=|-eq)\s*['\"]?8['\"]?", reserve_step)
     assert re.search(
-        r"MAX_DAILY_ATTEMPTS['\"]?\s*==\s*['\"]2['\"]",
+        r"MAX_DAILY_ATTEMPTS['\"]?\s*==\s*['\"]4['\"]",
         reserve_step,
     )
     assert "workflow_run.head_sha" in reserve_step

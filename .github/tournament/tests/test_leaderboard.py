@@ -90,12 +90,12 @@ def test_reservations_are_idempotent_and_limited_to_eight_per_team() -> None:
     assert len(reservations) == MAX_ATTEMPTS
 
 
-def test_reservations_are_limited_to_two_per_hong_kong_day() -> None:
+def test_reservations_are_limited_to_four_per_hong_kong_day() -> None:
     events: tuple[LeaderboardEvent, ...] = ()
     first_day = datetime(2026, 7, 12, 15, 0, tzinfo=timezone.utc)
-    assert MAX_DAILY_ATTEMPTS == 2
+    assert MAX_DAILY_ATTEMPTS == 4
 
-    for sequence in (1, 2):
+    for sequence in range(1, MAX_DAILY_ATTEMPTS + 1):
         events, reservation = reserve_attempt(
             events,
             team_id="group-01",
@@ -110,17 +110,17 @@ def test_reservations_are_limited_to_two_per_hong_kong_day() -> None:
         )
         assert reservation.attempt == sequence
 
-    with pytest.raises(AttemptLimitExceeded, match="two attempts per day"):
+    with pytest.raises(AttemptLimitExceeded, match="four attempts per day"):
         reserve_attempt(
             events,
             team_id="group-01",
             display_name="Group 01",
             submission_identity=make_submission_identity(
                 team_id="group-01",
-                prompt_sha256=_digest("daily-3"),
-                head_sha="3" * 40,
+                prompt_sha256=_digest("daily-5"),
+                head_sha="5" * 40,
             ),
-            reserved_at=first_day + timedelta(minutes=45),
+            reserved_at=first_day + timedelta(minutes=50),
             timezone="Asia/Hong_Kong",
         )
 
@@ -131,14 +131,14 @@ def test_reservations_are_limited_to_two_per_hong_kong_day() -> None:
         submission_identity=make_submission_identity(
             team_id="group-01",
             prompt_sha256=_digest("daily-next"),
-            head_sha="4" * 40,
+            head_sha="5" * 40,
         ),
         reserved_at=datetime(2026, 7, 12, 16, 1, tzinfo=timezone.utc),
         timezone="Asia/Hong_Kong",
     )
 
-    assert len(next_day_events) == 3
-    assert next_day.attempt == 3
+    assert len(next_day_events) == 5
+    assert next_day.attempt == 5
 
 
 def test_scoring_appends_once_and_conflicting_replays_fail() -> None:
