@@ -110,11 +110,13 @@ class FakeScorer:
         ),
         return_holdout_details: bool = True,
         fabricate_case_score: bool = False,
+        fail_on_attempt: int | None = None,
     ) -> None:
         self._bank = bank
         self._token_totals = token_totals
         self._return_holdout_details = return_holdout_details
         self._fabricate_case_score = fabricate_case_score
+        self._fail_on_attempt = fail_on_attempt
         self.calls: list[ScoreCall] = []
 
     def __call__(
@@ -149,6 +151,8 @@ class FakeScorer:
                 include_holdout_details=include_holdout_details,
             )
         )
+        if attempt == self._fail_on_attempt:
+            raise RuntimeError(f"simulated interruption on attempt {attempt}")
         if on_case_start is not None:
             for current in range(1, len(cases) + 1):
                 on_case_start(current, len(cases))
@@ -408,6 +412,25 @@ def test_validate_calibration_paths_rejects_non_ignored_local_tree(
         )
 
 
+def test_validate_calibration_paths_requires_ignored_checkpoint_directory(
+    repository_root: Path,
+) -> None:
+    prompt_directory = write_prompts(repository_root)
+    output_path = repository_root / ".local/calibration/round.json"
+    (repository_root / ".gitignore").write_text(
+        ".local/calibration/prompts/\n.local/calibration/round.json\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="checkpoint directory.*not ignored"):
+        validate_calibration_paths(
+            repository_root=repository_root,
+            prompt_directory=prompt_directory,
+            public_directory=repository_root / "public",
+            output_path=output_path,
+        )
+
+
 @pytest.mark.parametrize("tracked_path", ["prompt", "output"])
 def test_validate_calibration_paths_rejects_tracked_private_paths(
     repository_root: Path,
@@ -568,6 +591,200 @@ def test_run_calibration_writes_mode_0600_report_with_redacted_diagnostics(
     assert report["passed"] is True
     with pytest.raises(FrozenInstanceError):
         setattr(result, "schema_version", 2)
+
+
+def test_run_calibration_resumes_from_private_profile_checkpoints(
+    repository_root: Path,
+) -> None:
+    bank = make_bank()
+    prompts = write_prompts(repository_root)
+    output = repository_root / ".local/calibration/round.json"
+    interrupted_scorer = FakeScorer(bank, fail_on_attempt=2)
+
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        run_calibration(
+            bank=bank,
+            repository_root=repository_root,
+            prompt_directory=prompts,
+            public_directory=repository_root / "public",
+            output_path=output,
+            candidate_client=UnusedClient(),
+            judge_client=UnusedClient(),
+            scorer=interrupted_scorer,
+        )
+
+    checkpoint_directory = output.parent / f".{output.name}.checkpoints"
+    checkpoints = tuple(sorted(checkpoint_directory.glob("*.json")))
+    assert [path.name for path in checkpoints] == ["01-output_contract.json"]
+    checkpoint = checkpoints[0]
+    assert stat.S_IMODE(checkpoint.stat().st_mode) == 0o600
+    assert (
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "check-ignore",
+                "-q",
+                "--",
+                str(checkpoint.relative_to(repository_root)),
+            ],
+            check=False,
+        ).returncode
+        == 0
+    )
+    checkpoint_text = checkpoint.read_text(encoding="utf-8")
+    for private_value in (
+        *PRIVATE_PROMPT_BLOCKS,
+        "Private calibration question.",
+        "PRIVATE CASE INPUT MUST NOT LEAK",
+        "PRIVATE CONTEXT MUST NOT LEAK",
+        "PRIVATE REFERENCE MUST NOT LEAK",
+        "PRIVATE RUBRIC MUST NOT LEAK",
+        "PRIVATE PARTICIPANT PROMPT MUST NOT LEAK",
+    ):
+        assert private_value not in checkpoint_text
+
+    resumed_scorer = FakeScorer(bank)
+    result = run_calibration(
+        bank=bank,
+        repository_root=repository_root,
+        prompt_directory=prompts,
+        public_directory=repository_root / "public",
+        output_path=output,
+        candidate_client=UnusedClient(),
+        judge_client=UnusedClient(),
+        scorer=resumed_scorer,
+    )
+
+    assert [call.attempt for call in resumed_scorer.calls] == [2, 3, 4]
+    assert tuple(profile.name for profile in result.profiles) == PROFILE_NAMES
+    assert all(len(profile.diagnostics) == 50 for profile in result.profiles)
+    assert result.profiles[0].diagnostics[0].output == (
+        "PRIVATE CASE OUTPUT MUST NOT LEAK"
+    )
+    resumed_checkpoints = tuple(sorted(checkpoint_directory.glob("*.json")))
+    assert [path.name for path in resumed_checkpoints] == [
+        f"{index:02d}-{name}.json" for index, name in enumerate(PROFILE_NAMES, start=1)
+    ]
+    assert all(
+        stat.S_IMODE(path.stat().st_mode) == 0o600 for path in resumed_checkpoints
+    )
+    assert output.is_file()
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    [
+        ("candidate_model", "accounts/fireworks/models/stale", "candidate model"),
+        ("prompt_sha256", "0" * 64, "prompt hash"),
+    ],
+)
+def test_run_calibration_rejects_mismatched_checkpoint_before_scoring(
+    repository_root: Path,
+    field: str,
+    replacement: str,
+    message: str,
+) -> None:
+    bank = make_bank()
+    prompts = write_prompts(repository_root)
+    output = repository_root / ".local/calibration/round.json"
+    run_calibration(
+        bank=bank,
+        repository_root=repository_root,
+        prompt_directory=prompts,
+        public_directory=repository_root / "public",
+        output_path=output,
+        candidate_client=UnusedClient(),
+        judge_client=UnusedClient(),
+        scorer=FakeScorer(bank),
+    )
+    checkpoint = next((output.parent / f".{output.name}.checkpoints").glob("*.json"))
+    payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+    payload[field] = replacement
+    checkpoint.write_text(json.dumps(payload), encoding="utf-8")
+    scorer = FakeScorer(bank)
+
+    with pytest.raises(ValueError, match=message):
+        run_calibration(
+            bank=bank,
+            repository_root=repository_root,
+            prompt_directory=prompts,
+            public_directory=repository_root / "public",
+            output_path=output,
+            candidate_client=UnusedClient(),
+            judge_client=UnusedClient(),
+            scorer=scorer,
+        )
+
+    assert scorer.calls == []
+
+
+def test_run_calibration_rejects_malformed_checkpoint_before_scoring(
+    repository_root: Path,
+) -> None:
+    bank = make_bank()
+    prompts = write_prompts(repository_root)
+    output = repository_root / ".local/calibration/round.json"
+    checkpoint_directory = output.parent / f".{output.name}.checkpoints"
+    checkpoint_directory.mkdir(parents=True)
+    (checkpoint_directory / "01-output_contract.json").write_text(
+        '{"schema_version": 1}',
+        encoding="utf-8",
+    )
+    scorer = FakeScorer(bank)
+
+    with pytest.raises(ValueError, match="checkpoint"):
+        run_calibration(
+            bank=bank,
+            repository_root=repository_root,
+            prompt_directory=prompts,
+            public_directory=repository_root / "public",
+            output_path=output,
+            candidate_client=UnusedClient(),
+            judge_client=UnusedClient(),
+            scorer=scorer,
+        )
+
+    assert scorer.calls == []
+
+
+def test_run_calibration_rejects_checkpoint_after_context_changes(
+    repository_root: Path,
+) -> None:
+    bank = make_bank()
+    prompts = write_prompts(repository_root)
+    public_directory = write_public_contexts(repository_root)
+    output = repository_root / ".local/calibration/round.json"
+    run_calibration(
+        bank=bank,
+        repository_root=repository_root,
+        prompt_directory=prompts,
+        public_directory=public_directory,
+        output_path=output,
+        candidate_client=UnusedClient(),
+        judge_client=UnusedClient(),
+        scorer=FakeScorer(bank),
+    )
+    (public_directory / "contexts/a.md").write_text(
+        "# Primary\n\n## [ABC-DEF-001]\nChanged answer.\n",
+        encoding="utf-8",
+    )
+    scorer = FakeScorer(bank)
+
+    with pytest.raises(ValueError, match="inputs are stale"):
+        run_calibration(
+            bank=bank,
+            repository_root=repository_root,
+            prompt_directory=prompts,
+            public_directory=public_directory,
+            output_path=output,
+            candidate_client=UnusedClient(),
+            judge_client=UnusedClient(),
+            scorer=scorer,
+        )
+
+    assert scorer.calls == []
 
 
 def test_cli_fails_fast_before_loading_private_inputs(

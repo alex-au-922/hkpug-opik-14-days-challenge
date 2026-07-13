@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import tempfile
 from collections import Counter
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -50,6 +51,37 @@ JUDGE_CRITERIA = (
     "instruction_following",
     "faithfulness",
 )
+CHECKPOINT_SCHEMA_VERSION = 1
+CHECKPOINT_FIELDS = {
+    "schema_version",
+    "profile_name",
+    "attempt",
+    "candidate_model",
+    "judge_model",
+    "prompt_sha256",
+    "prompt_hashes",
+    "calibration_input_sha256",
+    "result",
+}
+CHECKPOINT_RESULT_FIELDS = {
+    "model",
+    "judge_model",
+    "prompt_sha256",
+    "discovery",
+    "holdout",
+    "overall_score",
+    "token_usage",
+    "call_count",
+}
+CHECKPOINT_PARTITION_FIELDS = {"case_count", "criteria", "score", "cases"}
+CHECKPOINT_CASE_FIELDS = {
+    "case_id",
+    "criteria",
+    "score",
+    "output",
+    "reasons",
+    "judge",
+}
 
 
 class CalibrationScorer(Protocol):
@@ -237,10 +269,27 @@ def run_calibration(
     _validate_bank(bank)
     profiles = _load_profiles(prompt_directory)
     score = scorer or cast(CalibrationScorer, score_prompt)
+    prompt_hashes = {profile.name: profile.prompt_sha256 for profile in profiles}
+    calibration_input_sha256 = _calibration_input_sha256(bank, public_directory)
+    cached_profiles = _load_profile_checkpoints(
+        output_path=output_path,
+        profiles=profiles,
+        bank=bank,
+        candidate_model=candidate_model,
+        judge_model=judge_model,
+        prompt_hashes=prompt_hashes,
+        calibration_input_sha256=calibration_input_sha256,
+    )
     profile_results: list[CalibrationProfileResult] = []
     case_scores: list[dict[str, _CaseScore]] = []
 
     for attempt, profile in enumerate(profiles, start=1):
+        cached = cached_profiles.get(profile.name)
+        if cached is not None:
+            profile_result, profile_case_scores = cached
+            profile_results.append(profile_result)
+            case_scores.append(profile_case_scores)
+            continue
         case_callback = _case_callback(profile.name, on_progress)
         raw_result = score(
             team_id="organizer-calibration",
@@ -264,6 +313,20 @@ def run_calibration(
             bank=bank,
             candidate_model=candidate_model,
             judge_model=judge_model,
+        )
+        checkpoint_path = _checkpoint_path(output_path, attempt, profile)
+        _write_private_json(
+            checkpoint_path,
+            _checkpoint_payload(
+                attempt=attempt,
+                profile=profile,
+                profiles=profiles,
+                profile_result=profile_result,
+                profile_case_scores=profile_case_scores,
+                candidate_model=candidate_model,
+                judge_model=judge_model,
+                calibration_input_sha256=calibration_input_sha256,
+            ),
         )
         profile_results.append(profile_result)
         case_scores.append(profile_case_scores)
@@ -338,6 +401,10 @@ def validate_calibration_paths(
         _assert_path_is_ignored(root, relative_path, label)
 
     _validate_output_path(output, public_directory, prompt_root)
+    checkpoint_root = _checkpoint_directory(output)
+    relative_checkpoint_root = checkpoint_root.relative_to(root)
+    _assert_path_is_untracked(root, relative_checkpoint_root, "checkpoint directory")
+    _assert_path_is_ignored(root, relative_checkpoint_root, "checkpoint directory")
     return prompt_root, output
 
 
@@ -447,6 +514,279 @@ def _load_profiles(prompt_directory: Path) -> tuple[CalibrationProfile, ...]:
                 f"retain all of {previous.filename} before its strategy block."
             )
     return tuple(profiles)
+
+
+def _checkpoint_directory(output_path: Path) -> Path:
+    return output_path.parent / f".{output_path.name}.checkpoints"
+
+
+def _checkpoint_path(
+    output_path: Path,
+    attempt: int,
+    profile: CalibrationProfile,
+) -> Path:
+    return _checkpoint_directory(output_path) / f"{attempt:02d}-{profile.name}.json"
+
+
+def _calibration_input_sha256(
+    bank: EvaluationBank,
+    public_directory: Path,
+) -> str:
+    context_hashes: dict[str, str | None] = {}
+    for relative_path in sorted(
+        {path for case in bank.cases for path in case.context_files}
+    ):
+        path = public_directory / relative_path
+        context_hashes[relative_path] = (
+            sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        )
+    canonical = json.dumps(
+        {"bank": asdict(bank), "public_context_sha256": context_hashes},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return sha256(canonical).hexdigest()
+
+
+def _load_profile_checkpoints(
+    *,
+    output_path: Path,
+    profiles: tuple[CalibrationProfile, ...],
+    bank: EvaluationBank,
+    candidate_model: str,
+    judge_model: str,
+    prompt_hashes: Mapping[str, str],
+    calibration_input_sha256: str,
+) -> dict[str, tuple[CalibrationProfileResult, dict[str, _CaseScore]]]:
+    checkpoint_directory = _checkpoint_directory(output_path)
+    expected_paths = {
+        _checkpoint_path(output_path, attempt, profile).name: (attempt, profile)
+        for attempt, profile in enumerate(profiles, start=1)
+    }
+    if not checkpoint_directory.exists():
+        return {}
+    directory_stat = checkpoint_directory.lstat()
+    if not stat.S_ISDIR(directory_stat.st_mode):
+        raise ValueError("Calibration checkpoint path must be a directory.")
+    actual_paths = {path.name: path for path in checkpoint_directory.iterdir()}
+    unexpected = sorted(set(actual_paths) - set(expected_paths))
+    if unexpected:
+        raise ValueError(
+            "Calibration checkpoint directory contains unexpected files: "
+            + ", ".join(unexpected)
+            + "."
+        )
+
+    cached: dict[str, tuple[CalibrationProfileResult, dict[str, _CaseScore]]] = {}
+    for filename, (attempt, profile) in expected_paths.items():
+        path = actual_paths.get(filename)
+        if path is None:
+            continue
+        cached[profile.name] = _load_profile_checkpoint(
+            path=path,
+            attempt=attempt,
+            profile=profile,
+            profiles=profiles,
+            bank=bank,
+            candidate_model=candidate_model,
+            judge_model=judge_model,
+            prompt_hashes=prompt_hashes,
+            calibration_input_sha256=calibration_input_sha256,
+        )
+    return cached
+
+
+def _load_profile_checkpoint(
+    *,
+    path: Path,
+    attempt: int,
+    profile: CalibrationProfile,
+    profiles: tuple[CalibrationProfile, ...],
+    bank: EvaluationBank,
+    candidate_model: str,
+    judge_model: str,
+    prompt_hashes: Mapping[str, str],
+    calibration_input_sha256: str,
+) -> tuple[CalibrationProfileResult, dict[str, _CaseScore]]:
+    file_stat = path.lstat()
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise ValueError(f"Calibration checkpoint is not a regular file: {path.name}.")
+    if stat.S_IMODE(file_stat.st_mode) != 0o600:
+        raise ValueError(f"Calibration checkpoint must use mode 0600: {path.name}.")
+    try:
+        raw_payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Calibration checkpoint is invalid: {path.name}.") from exc
+    if not isinstance(raw_payload, dict):
+        raise ValueError(f"Calibration checkpoint must be an object: {path.name}.")
+    payload = cast(dict[str, object], raw_payload)
+    if set(payload) != CHECKPOINT_FIELDS:
+        raise ValueError(f"Calibration checkpoint fields are invalid: {path.name}.")
+    if _required_int(payload, "schema_version") != CHECKPOINT_SCHEMA_VERSION:
+        raise ValueError(f"Calibration checkpoint schema is stale: {path.name}.")
+    if _required_string(payload, "profile_name") != profile.name:
+        raise ValueError(f"Calibration checkpoint profile is stale: {path.name}.")
+    if _required_int(payload, "attempt") != attempt:
+        raise ValueError(f"Calibration checkpoint attempt is stale: {path.name}.")
+    if _required_string(payload, "candidate_model") != candidate_model:
+        raise ValueError(
+            f"Calibration checkpoint candidate model is stale: {path.name}."
+        )
+    if _required_string(payload, "judge_model") != judge_model:
+        raise ValueError(f"Calibration checkpoint judge model is stale: {path.name}.")
+    if _required_string(payload, "prompt_sha256") != profile.prompt_sha256:
+        raise ValueError(f"Calibration checkpoint prompt hash is stale: {path.name}.")
+    _validate_checkpoint_prompt_hashes(
+        payload,
+        profiles=profiles,
+        expected=prompt_hashes,
+        path=path,
+    )
+    if (
+        _required_string(payload, "calibration_input_sha256")
+        != calibration_input_sha256
+    ):
+        raise ValueError(f"Calibration checkpoint inputs are stale: {path.name}.")
+    raw_result = _required_mapping(payload, "result")
+    try:
+        _validate_checkpoint_result_shape(raw_result)
+        return _parse_profile_result(
+            profile=profile,
+            raw_result=raw_result,
+            bank=bank,
+            candidate_model=candidate_model,
+            judge_model=judge_model,
+        )
+    except ValueError as exc:
+        raise ValueError(
+            f"Calibration checkpoint result is invalid: {path.name}: {exc}"
+        ) from exc
+
+
+def _validate_checkpoint_prompt_hashes(
+    payload: Mapping[str, object],
+    *,
+    profiles: tuple[CalibrationProfile, ...],
+    expected: Mapping[str, str],
+    path: Path,
+) -> None:
+    raw_hashes = _required_mapping(payload, "prompt_hashes")
+    if set(raw_hashes) != {profile.name for profile in profiles}:
+        raise ValueError(
+            f"Calibration checkpoint prompt hashes are stale: {path.name}."
+        )
+    actual = {name: _required_string(raw_hashes, name) for name in raw_hashes}
+    if actual != dict(expected):
+        raise ValueError(
+            f"Calibration checkpoint prompt hashes are stale: {path.name}."
+        )
+
+
+def _validate_checkpoint_result_shape(raw_result: Mapping[str, object]) -> None:
+    if set(raw_result) != CHECKPOINT_RESULT_FIELDS:
+        raise ValueError("checkpoint result fields are incomplete")
+    for partition in PARTITION_COUNTS:
+        raw_partition = _required_mapping(raw_result, partition)
+        if set(raw_partition) != CHECKPOINT_PARTITION_FIELDS:
+            raise ValueError(f"checkpoint {partition} fields are incomplete")
+        raw_cases = raw_partition.get("cases")
+        if not isinstance(raw_cases, list):
+            raise ValueError(f"checkpoint {partition} cases must be an array")
+        for raw_case in cast(list[object], raw_cases):
+            if not isinstance(raw_case, dict):
+                raise ValueError("checkpoint case fields are incomplete")
+            case_mapping = cast(dict[str, object], raw_case)
+            if set(case_mapping) != CHECKPOINT_CASE_FIELDS:
+                raise ValueError("checkpoint case fields are incomplete")
+    raw_usage = _required_mapping(raw_result, "token_usage")
+    if set(raw_usage) != {"candidate", "judge", "total"}:
+        raise ValueError("checkpoint token usage fields are incomplete")
+    for bucket_name in ("candidate", "judge", "total"):
+        bucket = _required_mapping(raw_usage, bucket_name)
+        if set(bucket) != {"prompt_tokens", "completion_tokens", "total_tokens"}:
+            raise ValueError("checkpoint token bucket fields are incomplete")
+
+
+def _checkpoint_payload(
+    *,
+    attempt: int,
+    profile: CalibrationProfile,
+    profiles: tuple[CalibrationProfile, ...],
+    profile_result: CalibrationProfileResult,
+    profile_case_scores: Mapping[str, _CaseScore],
+    candidate_model: str,
+    judge_model: str,
+    calibration_input_sha256: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "profile_name": profile.name,
+        "attempt": attempt,
+        "candidate_model": candidate_model,
+        "judge_model": judge_model,
+        "prompt_sha256": profile.prompt_sha256,
+        "prompt_hashes": {item.name: item.prompt_sha256 for item in profiles},
+        "calibration_input_sha256": calibration_input_sha256,
+        "result": _checkpoint_result(
+            profile_result,
+            profile_case_scores,
+            candidate_model=candidate_model,
+            judge_model=judge_model,
+        ),
+    }
+
+
+def _checkpoint_result(
+    profile_result: CalibrationProfileResult,
+    profile_case_scores: Mapping[str, _CaseScore],
+    *,
+    candidate_model: str,
+    judge_model: str,
+) -> dict[str, object]:
+    return {
+        "model": candidate_model,
+        "judge_model": judge_model,
+        "prompt_sha256": profile_result.prompt_sha256,
+        "discovery": _checkpoint_partition(
+            profile_result.discovery,
+            profile_case_scores,
+            "discovery",
+        ),
+        "holdout": _checkpoint_partition(
+            profile_result.holdout,
+            profile_case_scores,
+            "holdout",
+        ),
+        "overall_score": profile_result.overall_score,
+        "token_usage": _token_usage_to_dict(profile_result.token_usage),
+        "call_count": profile_result.call_count,
+    }
+
+
+def _checkpoint_partition(
+    aggregate: PartitionAggregate,
+    profile_case_scores: Mapping[str, _CaseScore],
+    partition: str,
+) -> dict[str, object]:
+    payload = _partition_to_dict(aggregate)
+    payload["cases"] = [
+        _checkpoint_case(item)
+        for item in profile_case_scores.values()
+        if item.case.partition == partition
+    ]
+    return payload
+
+
+def _checkpoint_case(item: _CaseScore) -> dict[str, object]:
+    diagnostic = _case_diagnostic_to_dict(item.diagnostic)
+    return {
+        "case_id": item.case.case_id,
+        "criteria": diagnostic["criteria"],
+        "score": item.score,
+        "output": diagnostic["output"],
+        "reasons": diagnostic["reasons"],
+        "judge": diagnostic["judge"],
+    }
 
 
 def _case_callback(
