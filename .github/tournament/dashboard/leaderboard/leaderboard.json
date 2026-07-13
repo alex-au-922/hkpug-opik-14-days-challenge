@@ -12,12 +12,12 @@
       "holdout": 0.25
     }
   },
-  "generated_at": "2026-07-13T17:45:25.808000Z",
+  "generated_at": "2026-07-13T17:53:24.811000Z",
   "schema_version": 1,
   "teams": [
     {
-      "attempts_remaining": 1,
-      "attempts_used": 7,
+      "attempts_remaining": 0,
+      "attempts_used": 8,
       "best": {
         "attempt": 6,
         "completed_at": "2026-07-13T17:36:26.721000Z",
@@ -33,17 +33,17 @@
       },
       "display_name": "Organizer Test Team",
       "latest": {
-        "attempt": 7,
-        "completed_at": "2026-07-13T17:45:25.808000Z",
+        "attempt": 8,
+        "completed_at": "2026-07-13T17:53:24.811000Z",
         "criteria": {
-          "answer_relevance": 17.19,
-          "deterministic": 36.86,
-          "faithfulness": 22.11,
-          "instruction_following": 13.64
+          "answer_relevance": 16.56,
+          "deterministic": 37.04,
+          "faithfulness": 22.07,
+          "instruction_following": 13.71
         },
-        "discovery_score": 90.0,
-        "holdout_score": 89.17,
-        "overall_score": 89.79
+        "discovery_score": 89.5,
+        "holdout_score": 89.04,
+        "overall_score": 89.39
       },
       "rank": 1,
       "runs": [
@@ -137,6 +137,19 @@
           "discovery_score": 90.0,
           "holdout_score": 89.17,
           "overall_score": 89.79
+        },
+        {
+          "attempt": 8,
+          "completed_at": "2026-07-13T17:53:24.811000Z",
+          "criteria": {
+            "answer_relevance": 16.56,
+            "deterministic": 37.04,
+            "faithfulness": 22.07,
+            "instruction_following": 13.71
+          },
+          "discovery_score": 89.5,
+          "holdout_score": 89.04,
+          "overall_score": 89.39
         }
       ],
       "team_id": "organizer-test"
