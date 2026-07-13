@@ -18,41 +18,73 @@ JUDGE_TIERS = (0, 25, 50, 75, 100)
 JsonObject = dict[str, object]
 Transport = Callable[[str, dict[str, str], JsonObject, float], JsonObject]
 RetryCallback = Callable[[int, int], None]
-JUDGE_RESPONSE_FORMAT: JsonObject = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "judge_evaluation",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "answer_relevance": {"type": "integer", "enum": JUDGE_TIERS},
-                "instruction_following": {"type": "integer", "enum": JUDGE_TIERS},
-                "faithfulness": {"type": "integer", "enum": JUDGE_TIERS},
-                "reasons": {
-                    "type": "object",
-                    "properties": {
-                        "answer_relevance": {"type": "string"},
-                        "instruction_following": {"type": "string"},
-                        "faithfulness": {"type": "string"},
-                    },
-                    "required": [
-                        "answer_relevance",
-                        "instruction_following",
-                        "faithfulness",
-                    ],
-                    "additionalProperties": False,
+
+
+def _judge_response_format(*, semantic_audit: bool) -> JsonObject:
+    properties: JsonObject = {
+        "answer_relevance": {"type": "integer", "enum": JUDGE_TIERS},
+        "instruction_following": {"type": "integer", "enum": JUDGE_TIERS},
+        "faithfulness": {"type": "integer", "enum": JUDGE_TIERS},
+    }
+    required = ["answer_relevance", "instruction_following", "faithfulness"]
+    if semantic_audit:
+        properties.update(
+            {
+                "required_points_met": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 0},
+                    "uniqueItems": True,
                 },
-            },
-            "required": [
-                "answer_relevance",
-                "instruction_following",
-                "faithfulness",
-                "reasons",
-            ],
-            "additionalProperties": False,
+                "prohibited_claims_present": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 0},
+                    "uniqueItems": True,
+                },
+                "non_authoritative_evidence_used": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "uniqueItems": True,
+                },
+            }
+        )
+        required.extend(
+            [
+                "required_points_met",
+                "prohibited_claims_present",
+                "non_authoritative_evidence_used",
+            ]
+        )
+    properties["reasons"] = {
+        "type": "object",
+        "properties": {
+            "answer_relevance": {"type": "string"},
+            "instruction_following": {"type": "string"},
+            "faithfulness": {"type": "string"},
         },
-    },
-}
+        "required": [
+            "answer_relevance",
+            "instruction_following",
+            "faithfulness",
+        ],
+        "additionalProperties": False,
+    }
+    required.append("reasons")
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "judge_evaluation",
+            "schema": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+JUDGE_RESPONSE_FORMAT = _judge_response_format(semantic_audit=False)
+SCORING_JUDGE_RESPONSE_FORMAT = _judge_response_format(semantic_audit=True)
 
 
 @dataclass(frozen=True)

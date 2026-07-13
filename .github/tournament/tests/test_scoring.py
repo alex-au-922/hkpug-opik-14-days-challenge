@@ -15,6 +15,7 @@ from hkpug_challenge.fireworks import (
     Completion,
     FIREWORKS_MODEL,
     JUDGE_RESPONSE_FORMAT,
+    SCORING_JUDGE_RESPONSE_FORMAT,
 )
 from hkpug_challenge.models import Message
 from hkpug_challenge.playground import FIXED_SYSTEM_PROMPT
@@ -79,9 +80,9 @@ def make_case(case_id: str, partition: str) -> EvaluationCase:
         ),
         rubric=EvaluationRubric(
             required_citation_groups=(("DOM-POL-001",), ("DOM-POL-002",)),
-            required_points=("State Alpha.",),
+            required_points=("State Alpha.", "Do not escalate."),
             prohibited_claims=("Claim Beta.",),
-            non_authoritative_evidence=(),
+            non_authoritative_evidence=("HB-GOV-001",),
         ),
     )
 
@@ -94,13 +95,22 @@ def make_cases() -> tuple[EvaluationCase, ...]:
 
 
 def judge_response(
-    relevance: int = 75, instruction: int = 100, faithfulness: int = 75
+    relevance: int = 75,
+    instruction: int = 100,
+    faithfulness: int = 75,
+    *,
+    required_points_met: Sequence[int] = (0, 1),
+    prohibited_claims_present: Sequence[int] = (),
+    non_authoritative_evidence_used: Sequence[str] = (),
 ) -> str:
     return json.dumps(
         {
             "answer_relevance": relevance,
             "instruction_following": instruction,
             "faithfulness": faithfulness,
+            "required_points_met": required_points_met,
+            "prohibited_claims_present": prohibited_claims_present,
+            "non_authoritative_evidence_used": non_authoritative_evidence_used,
             "reasons": {
                 "answer_relevance": "Answers the requested decision.",
                 "instruction_following": "Follows the response contract.",
@@ -120,7 +130,7 @@ def valid_answer() -> str:
     )
 
 
-def test_score_prompt_returns_discovery_detail_and_aggregate_holdout(
+def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
     tmp_path: Path,
 ) -> None:
     public = write_contexts(tmp_path)
@@ -141,7 +151,16 @@ def test_score_prompt_returns_discovery_detail_and_aggregate_holdout(
     assert len(answer_client.calls) == 50
     assert len(judge_client.calls) == 50
     assert all(call[1:] == (256, None) for call in answer_client.calls)
-    assert all(call[1:] == (1024, JUDGE_RESPONSE_FORMAT) for call in judge_client.calls)
+    assert all(
+        call[1:] == (1024, SCORING_JUDGE_RESPONSE_FORMAT) for call in judge_client.calls
+    )
+    for audit_field in (
+        "required_points_met",
+        "prohibited_claims_present",
+        "non_authoritative_evidence_used",
+    ):
+        assert audit_field not in json.dumps(JUDGE_RESPONSE_FORMAT)
+        assert audit_field in json.dumps(SCORING_JUDGE_RESPONSE_FORMAT)
     assert result["model"] == FIREWORKS_MODEL
     assert result["judge_model"] == JUDGE_MODEL
     assert result["overall_score"] == 88.75
@@ -175,6 +194,32 @@ def test_score_prompt_returns_discovery_detail_and_aggregate_holdout(
     assert "rubric" not in serialized
     assert "participant_prompt" in answer_client.calls[0][0][-1]["content"]
     assert "participant_prompt" not in judge_client.calls[0][0][-1]["content"]
+
+
+def test_score_prompt_includes_all_holdout_details_when_requested(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+
+    result = score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-private-holdout",
+        participant_prompt="Return JSON.",
+        cases=make_cases(),
+        public_directory=public,
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=FakeCompletionClient([judge_response()] * 50),
+        include_holdout_details=True,
+    )
+
+    holdout_cases = result["holdout"]["cases"]
+    assert len(holdout_cases) == 10
+    assert [case["case_id"] for case in holdout_cases] == [
+        f"HOLD-{index:02d}" for index in range(1, 11)
+    ]
+    assert set(holdout_cases[0]) == set(result["discovery"]["cases"][0])
+    assert all("partition" not in case for case in holdout_cases)
 
 
 def test_score_prompt_reports_case_progress_without_case_details(
@@ -221,6 +266,94 @@ def test_score_prompt_applies_partial_deterministic_scores(tmp_path: Path) -> No
 
     assert result["overall_score"] == 72.5
     assert result["discovery"]["criteria"]["evidence_coverage"] == 5.0
+
+
+def test_score_prompt_caps_relevance_by_required_point_coverage(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    response = judge_response(
+        100,
+        0,
+        0,
+        required_points_met=(0,),
+    )
+
+    result = score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-relevance-cap",
+        participant_prompt="Return JSON.",
+        cases=make_cases(),
+        public_directory=public,
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=FakeCompletionClient([response] * 50),
+    )
+
+    assert result["discovery"]["criteria"]["answer_relevance"] == 10.0
+    assert result["holdout"]["criteria"]["answer_relevance"] == 10.0
+
+
+@pytest.mark.parametrize(
+    ("audit_field", "audit_value"),
+    [
+        ("prohibited_claims_present", [0]),
+        ("non_authoritative_evidence_used", ["HB-GOV-001"]),
+    ],
+)
+def test_score_prompt_caps_faithfulness_for_semantic_hazards(
+    tmp_path: Path,
+    audit_field: str,
+    audit_value: list[int] | list[str],
+) -> None:
+    public = write_contexts(tmp_path)
+    response = json.loads(judge_response(0, 0, 100))
+    response[audit_field] = audit_value
+
+    result = score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-faithfulness-cap",
+        participant_prompt="Return JSON.",
+        cases=make_cases(),
+        public_directory=public,
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=FakeCompletionClient([json.dumps(response)] * 50),
+    )
+
+    assert result["discovery"]["criteria"]["faithfulness"] == 12.5
+    assert result["holdout"]["criteria"]["faithfulness"] == 12.5
+
+
+@pytest.mark.parametrize(
+    ("audit_field", "audit_value"),
+    [
+        ("required_points_met", [-1]),
+        ("required_points_met", [2]),
+        ("prohibited_claims_present", [1]),
+        ("non_authoritative_evidence_used", ["DOM-POL-001"]),
+    ],
+)
+def test_score_prompt_rejects_semantic_audit_values_outside_case_rubric(
+    tmp_path: Path,
+    audit_field: str,
+    audit_value: list[int] | list[str],
+) -> None:
+    public = write_contexts(tmp_path)
+    response = json.loads(judge_response())
+    response[audit_field] = audit_value
+
+    with pytest.raises(ValueError, match="Judge response"):
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-invalid-semantic-audit",
+            participant_prompt="Return JSON.",
+            cases=make_cases(),
+            public_directory=public,
+            candidate_client=FakeCompletionClient([valid_answer()] * 50),
+            judge_client=FakeCompletionClient([json.dumps(response)]),
+        )
 
 
 def test_score_prompt_enforces_call_ceiling_before_model_calls(tmp_path: Path) -> None:

@@ -12,6 +12,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     StrictInt,
+    StrictStr,
     ValidationError,
     field_validator,
 )
@@ -21,9 +22,9 @@ from .evaluation_bank import PARTITION_COUNTS, EvaluationCase
 from .fireworks import (
     Completion,
     FIREWORKS_MODEL,
-    JUDGE_RESPONSE_FORMAT,
     JUDGE_TIERS,
     JUDGE_MODEL,
+    SCORING_JUDGE_RESPONSE_FORMAT,
     CompletionClient,
     validate_scoring_models,
 )
@@ -56,11 +57,14 @@ class _JudgeReasons(BaseModel):
 
 
 class _JudgePayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     answer_relevance: StrictInt
     instruction_following: StrictInt
     faithfulness: StrictInt
+    required_points_met: tuple[StrictInt, ...]
+    prohibited_claims_present: tuple[StrictInt, ...]
+    non_authoritative_evidence_used: tuple[StrictStr, ...]
     reasons: _JudgeReasons
 
     @field_validator(
@@ -71,6 +75,24 @@ class _JudgePayload(BaseModel):
         if value not in JUDGE_TIERS:
             raise ValueError(f"Judge scores must be one of {JUDGE_TIERS}.")
         return value
+
+    @field_validator("required_points_met", "prohibited_claims_present", mode="after")
+    @classmethod
+    def validate_audit_indexes(cls, values: tuple[int, ...]) -> tuple[int, ...]:
+        if any(value < 0 for value in values):
+            raise ValueError("Judge audit indexes must be zero-based.")
+        if len(set(values)) != len(values):
+            raise ValueError("Judge audit indexes must not contain duplicates.")
+        return values
+
+    @field_validator("non_authoritative_evidence_used", mode="after")
+    @classmethod
+    def validate_audit_evidence(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not value for value in values):
+            raise ValueError("Judge audit evidence IDs must not be empty.")
+        if len(set(values)) != len(values):
+            raise ValueError("Judge audit evidence IDs must not contain duplicates.")
+        return values
 
 
 def score_prompt(
@@ -87,6 +109,7 @@ def score_prompt(
     judge_model: str = JUDGE_MODEL,
     max_calls: int = 100,
     max_run_tokens: int = MAX_RUN_TOKENS,
+    include_holdout_details: bool = False,
     on_case_start: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     prompt = participant_prompt.strip()
@@ -132,6 +155,11 @@ def score_prompt(
         for result in discovery_results
     ]
     holdout = _aggregate(holdout_results)
+    if include_holdout_details:
+        holdout["cases"] = [
+            {key: value for key, value in result.items() if key != "partition"}
+            for result in holdout_results
+        ]
 
     overall_score = round(
         float(discovery["score"]) * DISCOVERY_WEIGHT
@@ -204,7 +232,7 @@ def _score_case(
             candidate_answer=answer_completion.content,
         ),
         max_tokens=1024,
-        response_format=JUDGE_RESPONSE_FORMAT,
+        response_format=SCORING_JUDGE_RESPONSE_FORMAT,
     )
     _record_token_usage(
         token_usage=token_usage,
@@ -213,10 +241,11 @@ def _score_case(
         max_run_tokens=max_run_tokens,
     )
     judge_completed_at = _timestamp()
-    judge = _parse_judge(judge_completion.content)
+    judge = _parse_judge(judge_completion.content, case=case)
+    judge_scores = _capped_judge_scores(case=case, judge=judge)
     criteria = dict(deterministic_scores)
     for name, weight in JUDGE_WEIGHTS.items():
-        criteria[name] = round(float(getattr(judge, name)) * weight, 2)
+        criteria[name] = round(float(judge_scores[name]) * weight, 2)
 
     return {
         "partition": case.partition,
@@ -318,8 +347,15 @@ def _judge_messages(
                 "or omissions, 75 for minor errors or omissions, and 100 when fully "
                 "met. Judge only answer quality here; JSON shape, citation validity, "
                 "evidence coverage, and escalation matching are scored separately. "
-                "Return one JSON object with the three tier scores and a reasons object "
-                "containing one short reason for each score."
+                "Audit required_points_met as zero-based indexes of every required "
+                "point materially satisfied by the candidate. Audit "
+                "prohibited_claims_present as zero-based indexes of every prohibited "
+                "claim present. Audit non_authoritative_evidence_used as IDs from the "
+                "rubric list that the candidate treats as authority, not sources it "
+                "merely identifies as non-authoritative. Use empty arrays when none "
+                "apply. Return one JSON object with the three tier scores, the three "
+                "audit arrays, and a reasons object containing one short reason for "
+                "each score."
             ),
         },
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -384,12 +420,52 @@ def _deterministic_scores(
     return scores
 
 
-def _parse_judge(response: str) -> _JudgePayload:
+def _parse_judge(response: str, *, case: EvaluationCase) -> _JudgePayload:
     try:
         payload = cast(object, json.loads(response))
-        return _JudgePayload.model_validate(payload)
+        judge = _JudgePayload.model_validate(payload)
     except (json.JSONDecodeError, ValidationError) as exc:
         raise ValueError("Judge response did not match the scoring contract.") from exc
+
+    required_point_count = len(case.rubric.required_points)
+    prohibited_claim_count = len(case.rubric.prohibited_claims)
+    audit_outside_rubric = (
+        any(index >= required_point_count for index in judge.required_points_met)
+        or any(
+            index >= prohibited_claim_count for index in judge.prohibited_claims_present
+        )
+        or not set(judge.non_authoritative_evidence_used).issubset(
+            case.rubric.non_authoritative_evidence
+        )
+    )
+    if audit_outside_rubric:
+        raise ValueError("Judge response did not match the scoring contract.")
+    return judge
+
+
+def _capped_judge_scores(
+    *, case: EvaluationCase, judge: _JudgePayload
+) -> dict[str, int]:
+    required_point_count = len(case.rubric.required_points)
+    relevance_cap = JUDGE_TIERS[-1]
+    if required_point_count:
+        coverage_tier = (
+            len(judge.required_points_met)
+            * (len(JUDGE_TIERS) - 1)
+            // required_point_count
+        )
+        relevance_cap = JUDGE_TIERS[coverage_tier]
+
+    faithfulness_cap = (
+        50
+        if judge.prohibited_claims_present or judge.non_authoritative_evidence_used
+        else JUDGE_TIERS[-1]
+    )
+    return {
+        "answer_relevance": min(judge.answer_relevance, relevance_cap),
+        "instruction_following": judge.instruction_following,
+        "faithfulness": min(judge.faithfulness, faithfulness_cap),
+    }
 
 
 def _empty_token_usage() -> dict[str, dict[str, int]]:
