@@ -19,7 +19,7 @@ from pydantic import (
 
 
 MAX_ATTEMPTS = 8
-MAX_DAILY_ATTEMPTS = 4
+MAX_DAILY_ATTEMPTS = 8
 DISCOVERY_WEIGHT = 0.75
 HOLDOUT_WEIGHT = 0.25
 _TEAM_ID = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?")
@@ -234,7 +234,7 @@ class PublicChallenge(_PublicModel):
     ends_at: datetime
     timezone: str
     max_attempts: Literal[8] = MAX_ATTEMPTS
-    max_daily_attempts: Literal[4] = MAX_DAILY_ATTEMPTS
+    max_daily_attempts: Literal[8] = MAX_DAILY_ATTEMPTS
     weights: PublicWeights = PublicWeights()
 
     @model_validator(mode="after")
@@ -337,7 +337,7 @@ def reserve_attempt(
     )
     if attempts_today >= MAX_DAILY_ATTEMPTS:
         raise AttemptLimitExceeded(
-            "This team has already reserved its four attempts per day."
+            "This team has already reserved its eight attempts per day."
         )
 
     reservation = AttemptReserved(

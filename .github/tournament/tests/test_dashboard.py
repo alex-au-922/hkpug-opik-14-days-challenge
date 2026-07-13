@@ -413,6 +413,7 @@ def test_seed_leaderboard_is_valid_public_empty_state() -> None:
 
     assert leaderboard.schema_version == 1
     assert leaderboard.challenge.max_attempts == 8
+    assert leaderboard.challenge.max_daily_attempts == 8
     assert leaderboard.challenge.weights.discovery == 0.75
     assert leaderboard.challenge.weights.holdout == 0.25
     assert leaderboard.teams == ()

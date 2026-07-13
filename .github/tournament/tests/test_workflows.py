@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_ROOT = REPO_ROOT / ".github" / "workflows"
 VALIDATE_WORKFLOW = "validate-submission.yml"
 TRUSTED_WORKFLOW = "trusted-score.yml"
+SCORING_STATUS_WORKFLOW = "scoring-status.yml"
 PLAYGROUND_WORKFLOW = "playground-smoke.yml"
 PAGES_WORKFLOW = "deploy-pages.yml"
 HELPER_RELEASE_WORKFLOW = "release-helper.yml"
@@ -159,6 +160,7 @@ def test_required_two_stage_and_pages_workflows_exist() -> None:
     for filename in (
         VALIDATE_WORKFLOW,
         TRUSTED_WORKFLOW,
+        SCORING_STATUS_WORKFLOW,
         PAGES_WORKFLOW,
         HELPER_RELEASE_WORKFLOW,
     ):
@@ -358,7 +360,7 @@ def test_trusted_scoring_gates_secrets_and_atomically_reserves_eight_attempts() 
         r"(?m)^\s+MAX_ATTEMPTS:\s*\$\{\{\s*vars\.MAX_ATTEMPTS\s*}}\s*$",
         text,
     )
-    assert re.search(r"(?m)^\s+MAX_DAILY_ATTEMPTS:\s*4\s*$", text)
+    assert re.search(r"(?m)^\s+MAX_DAILY_ATTEMPTS:\s*8\s*$", text)
     assert_concurrency(
         text,
         group_pattern=r"group:\s*(?:tournament-)?(?:score|scoring|attempt)[a-z-]*\s*$",
@@ -372,7 +374,7 @@ def test_trusted_scoring_gates_secrets_and_atomically_reserves_eight_attempts() 
     assert "MAX_DAILY_ATTEMPTS" in reserve_step
     assert re.search(r"(?:==|=|-eq)\s*['\"]?8['\"]?", reserve_step)
     assert re.search(
-        r"MAX_DAILY_ATTEMPTS['\"]?\s*==\s*['\"]4['\"]",
+        r"MAX_DAILY_ATTEMPTS['\"]?\s*==\s*['\"]8['\"]",
         reserve_step,
     )
     assert "workflow_run.head_sha" in reserve_step
@@ -493,23 +495,40 @@ def test_scoring_failure_comment_is_final_and_requires_resolved_pr() -> None:
 
 
 def test_scoring_posts_a_progress_comment_after_validation() -> None:
-    text = load_workflow(TRUSTED_WORKFLOW)
-    provenance_step = named_step(text, r"validate.*(?:workflow|run).*provenance")
-    gate_step = named_step(text, r"(?:check|require|gate).*scoring.*enabled")
-    progress_step = named_step(text, r"comment.*scoring.*(?:started|running|progress)")
-    score_step = named_step(text, r"score.*(?:fixed )?(?:evaluation )?bank")
+    validate_text = load_workflow(VALIDATE_WORKFLOW)
+    trusted_text = load_workflow(TRUSTED_WORKFLOW)
+    text = load_workflow(SCORING_STATUS_WORKFLOW)
+    trigger = top_level_block(text, "on")
+    expected_name = re.escape(workflow_name(validate_text))
+    provenance_step = named_step(text, r"resolve.*exact.*pull request")
+    progress_step = named_step(text, r"comment.*scoring.*status")
 
+    assert re.search(r"(?m)^\s+workflow_run:\s*$", trigger)
+    assert re.search(rf"workflows:.*['\"]?{expected_name}['\"]?", trigger)
+    assert re.search(r"types:\s*\[?completed\]?", trigger)
+    assert permission_entries(text) == {
+        "actions": "read",
+        "contents": "read",
+        "pull-requests": "write",
+    }
+    assert "concurrency:" not in text
+    assert "comment scoring status" not in trusted_text.lower()
+    for token in (
+        "github.event.workflow_run.id",
+        "github.event.workflow_run.head_repository.full_name",
+        "github.event.workflow_run.head_sha",
+        "base.ref",
+        "head.repo.full_name",
+        "head.sha",
+        "main",
+    ):
+        assert token in provenance_step
     assert "gh pr comment" in progress_step
     assert "GH_TOKEN: ${{ github.token }}" in progress_step
     assert "Validation completed" in progress_step
-    assert "scoring pipeline is running" in progress_step
+    assert "scoring pipeline is queued or running" in progress_step
     assert "50 cases" in progress_step
-    assert (
-        text.index(provenance_step)
-        < text.index(gate_step)
-        < text.index(progress_step)
-        < text.index(score_step)
-    )
+    assert text.index(provenance_step) < text.index(progress_step)
 
 
 def test_leaderboard_update_is_serialized_append_only_and_non_force() -> None:

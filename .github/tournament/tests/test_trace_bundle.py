@@ -141,7 +141,7 @@ def test_trace_bundle_has_answer_and_judge_spans_without_holdout_details() -> No
         *first["trace_payload.json"]["traces"],
         *first["span_payload.json"]["spans"],
     ):
-        UUID(item["id"])
+        assert UUID(item["id"]).version == 7
         assert item["metadata"]["partition"] == "discovery"
     serialized = json.dumps(first)
     assert "holdout question" not in serialized

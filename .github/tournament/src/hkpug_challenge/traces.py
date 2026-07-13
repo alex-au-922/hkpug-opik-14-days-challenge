@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
-from uuid import NAMESPACE_URL, uuid5
+from uuid import UUID
 
 
 CRITERION_MAX = {
@@ -46,9 +48,6 @@ def build_trace_bundle(
             raise ValueError("Discovery cases must be JSON objects.")
         case = cast(dict[str, object], case_value)
         case_id = _required_text(case, "case_id")
-        trace_id = _stable_id(team_id, run_id, case_id, "trace")
-        answer_span_id = _stable_id(team_id, run_id, case_id, "span/answer")
-        judge_span_id = _stable_id(team_id, run_id, case_id, "span/judge")
         case_input = _required_object(case, "input")
         output_text = _required_text(case, "output")
         output = _decode_output(output_text)
@@ -56,6 +55,15 @@ def build_trace_bundle(
         reasons = _required_object(case, "reasons")
         usage = _required_object(case, "usage")
         timing = _required_object(case, "timing")
+        answer_started_at = _required_text(timing, "answer_started_at")
+        judge_started_at = _required_text(timing, "judge_started_at")
+        trace_id = _stable_uuid7(answer_started_at, team_id, run_id, case_id, "trace")
+        answer_span_id = _stable_uuid7(
+            answer_started_at, team_id, run_id, case_id, "span/answer"
+        )
+        judge_span_id = _stable_uuid7(
+            judge_started_at, team_id, run_id, case_id, "span/judge"
+        )
         metadata = {
             "partition": "discovery",
             "case_id": case_id,
@@ -69,7 +77,7 @@ def build_trace_bundle(
                 "id": trace_id,
                 "project_name": project_name,
                 "name": f"{case_id} support evaluation",
-                "start_time": _required_text(timing, "answer_started_at"),
+                "start_time": answer_started_at,
                 "end_time": _required_text(timing, "judge_completed_at"),
                 "input": case_input,
                 "output": output,
@@ -85,7 +93,7 @@ def build_trace_bundle(
                     "project_name": project_name,
                     "name": "model.answer",
                     "type": "llm",
-                    "start_time": _required_text(timing, "answer_started_at"),
+                    "start_time": answer_started_at,
                     "end_time": _required_text(timing, "answer_completed_at"),
                     "input": case_input,
                     "output": output,
@@ -106,7 +114,7 @@ def build_trace_bundle(
                     "project_name": project_name,
                     "name": "evaluation.judge",
                     "type": "llm",
-                    "start_time": _required_text(timing, "judge_started_at"),
+                    "start_time": judge_started_at,
                     "end_time": _required_text(timing, "judge_completed_at"),
                     "input": {
                         "candidate_answer": output,
@@ -190,8 +198,29 @@ def write_trace_bundle(scoring_result: dict[str, object], output: Path) -> None:
             path.chmod(0o600)
 
 
-def _stable_id(team_id: str, run_id: str, case_id: str, entity: str) -> str:
-    return str(uuid5(NAMESPACE_URL, f"hkpug/{team_id}/{run_id}/{case_id}/{entity}"))
+def _stable_uuid7(
+    timestamp: str,
+    team_id: str,
+    run_id: str,
+    case_id: str,
+    entity: str,
+) -> str:
+    instant = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if instant.tzinfo is None:
+        raise ValueError("Trace timestamps must include a timezone.")
+    delta = instant.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    milliseconds = (
+        delta.days * 86_400_000 + delta.seconds * 1_000 + delta.microseconds // 1_000
+    )
+    if not 0 <= milliseconds < 1 << 48:
+        raise ValueError("Trace timestamps are outside the UUIDv7 range.")
+
+    identity = f"hkpug/{team_id}/{run_id}/{case_id}/{entity}".encode()
+    random_bits = int.from_bytes(sha256(identity).digest(), "big") & ((1 << 74) - 1)
+    random_a = random_bits >> 62
+    random_b = random_bits & ((1 << 62) - 1)
+    value = milliseconds << 80 | 0x7 << 76 | random_a << 64 | 0b10 << 62 | random_b
+    return str(UUID(int=value))
 
 
 def _decode_output(value: str) -> object:
