@@ -186,7 +186,7 @@ def _score_case(
             context=context,
             candidate_answer=answer_completion.content,
         ),
-        max_tokens=384,
+        max_tokens=1024,
         response_format=JUDGE_RESPONSE_FORMAT,
     )
     judge_completed_at = _timestamp()

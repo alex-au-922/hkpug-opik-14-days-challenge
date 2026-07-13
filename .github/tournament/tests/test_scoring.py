@@ -140,7 +140,7 @@ def test_score_prompt_returns_discovery_detail_and_aggregate_holdout(
     assert len(answer_client.calls) == 50
     assert len(judge_client.calls) == 50
     assert all(call[1:] == (256, None) for call in answer_client.calls)
-    assert all(call[1:] == (384, JUDGE_RESPONSE_FORMAT) for call in judge_client.calls)
+    assert all(call[1:] == (1024, JUDGE_RESPONSE_FORMAT) for call in judge_client.calls)
     assert result["model"] == FIREWORKS_MODEL
     assert result["judge_model"] == JUDGE_MODEL
     assert result["overall_score"] == 88.75
