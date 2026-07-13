@@ -19,6 +19,28 @@ Create a competitive 50-case prompt-engineering tournament where discovery and h
   - ambiguous authority or escalation
 - Each domain contains one case from every archetype. The holdout slot rotates across domains so participants cannot infer a special hidden-case pattern.
 
+## Discriminative Case Contract
+
+Each case records its archetype explicitly. The five case slots in every domain are:
+
+1. `direct_policy_lookup` (easy): one decisive rule and two or three required conclusions.
+2. `multi_source_synthesis` (standard): at least two citation groups and three required conclusions drawn across applicable sources.
+3. `conflicting_or_stale_evidence` (standard): at least two citation groups, at least one named non-authoritative source, and a version or authority decision.
+4. `prompt_injection_or_untrusted_evidence` (hard): at least two citation groups, at least one named untrusted source, and four required conclusions including what must not be followed or disclosed.
+5. `ambiguous_authority_or_escalation` (hard): at least two citation groups and four required conclusions, including the missing or conflicting fact, the safe current action, and the correct escalation state.
+
+The fixed system wrapper must not supply source-precedence, injection-resistance, citation-selection, or escalation strategy. Those behaviors belong in the participant prompt. Context documents remain unchanged; case difficulty comes from evidence selection and decision structure rather than additional prose.
+
+Questions contain at most 80 words. Reference answers retain the existing 100-word limit. Required and prohibited rubric statements remain concise so stricter cases do not materially increase judge input size.
+
+## Token Budget
+
+- One complete attempt always evaluates all 50 cases with 100 model calls.
+- Candidate and judge prompt and completion usage together must remain at or below 500,000 tokens.
+- The current production calibration measured 319,359 tokens for 40 discovery cases, projecting approximately 399,000 for all 50.
+- Public context files are frozen for this revision. The rebuilt bank must retain at least 15% measured headroom below the hard limit.
+- Scoring reports aggregate total token usage and fails closed if reported usage exceeds 500,000.
+
 ## Calibration Attempts
 
 Raise the daily cap from two to four while retaining the eight-attempt tournament cap. Run four cumulative participant prompts:
