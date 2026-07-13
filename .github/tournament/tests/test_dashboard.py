@@ -95,6 +95,9 @@ def test_root_page_is_a_participant_focused_challenge_overview() -> None:
     assert 'href="start/"' in html
     assert 'href="tutorial/"' in html
     assert 'href="leaderboard/"' in html
+    assert "Eight total" in html
+    assert "Eight maximum" in html
+    assert "Four maximum" not in html
     for noise in (
         "Public data",
         "Answer contract",
