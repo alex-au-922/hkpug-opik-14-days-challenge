@@ -78,14 +78,6 @@ jobs:
           set -euo pipefail
           [[ "$ORGANIZER_REF" =~ ^[0-9a-f]{40}$ ]]
 
-      - name: Comment scoring started
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
-            "Validation completed. The scoring pipeline is running and evaluates 50 cases; this may take a few minutes."
-
       - name: Check out trusted scorer code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
