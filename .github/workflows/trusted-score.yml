@@ -12,6 +12,7 @@ permissions:
 
 concurrency:
   cancel-in-progress: false
+  queue: max
   group: tournament-scoring
 
 env:
