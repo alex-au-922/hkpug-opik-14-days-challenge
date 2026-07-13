@@ -1,17 +1,31 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Callable
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StrictInt,
+    ValidationError,
+    field_validator,
+)
 
 from .dataset import EVIDENCE_ID_PATTERN
-from .evaluation_bank import EvaluationCase
-from .fireworks import FIREWORKS_MODEL, JUDGE_RESPONSE_FORMAT, CompletionClient
+from .evaluation_bank import PARTITION_COUNTS, EvaluationCase
+from .fireworks import (
+    FIREWORKS_MODEL,
+    JUDGE_RESPONSE_FORMAT,
+    JUDGE_TIERS,
+    JUDGE_MODEL,
+    CompletionClient,
+    validate_scoring_models,
+)
 from .models import Message
 from .playground import FIXED_SYSTEM_PROMPT
 
@@ -42,10 +56,19 @@ class _JudgeReasons(BaseModel):
 class _JudgePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    answer_relevance: StrictInt = Field(ge=0, le=100)
-    instruction_following: StrictInt = Field(ge=0, le=100)
-    faithfulness: StrictInt = Field(ge=0, le=100)
+    answer_relevance: StrictInt
+    instruction_following: StrictInt
+    faithfulness: StrictInt
     reasons: _JudgeReasons
+
+    @field_validator(
+        "answer_relevance", "instruction_following", "faithfulness", mode="after"
+    )
+    @classmethod
+    def validate_tier(cls, value: int) -> int:
+        if value not in JUDGE_TIERS:
+            raise ValueError(f"Judge scores must be one of {JUDGE_TIERS}.")
+        return value
 
 
 def score_prompt(
@@ -56,7 +79,10 @@ def score_prompt(
     participant_prompt: str,
     cases: tuple[EvaluationCase, ...],
     public_directory: Path,
-    client: CompletionClient,
+    candidate_client: CompletionClient,
+    judge_client: CompletionClient,
+    candidate_model: str = FIREWORKS_MODEL,
+    judge_model: str = JUDGE_MODEL,
     max_calls: int = 100,
     on_case_start: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
@@ -65,6 +91,9 @@ def score_prompt(
         raise ValueError("Participant prompt must not be empty.")
     if attempt < 1:
         raise ValueError("Attempt must be positive.")
+    candidate_model, judge_model = validate_scoring_models(candidate_model, judge_model)
+    if dict(Counter(case.partition for case in cases)) != PARTITION_COUNTS:
+        raise ValueError("Scoring requires exactly 40 discovery and 10 holdout cases.")
     required_calls = len(cases) * 2
     if required_calls > max_calls:
         raise ValueError(
@@ -81,7 +110,8 @@ def score_prompt(
                 case=case,
                 participant_prompt=prompt,
                 public_directory=public_directory,
-                client=client,
+                candidate_client=candidate_client,
+                judge_client=judge_client,
             )
         )
     discovery_results = [
@@ -105,7 +135,8 @@ def score_prompt(
         "team_id": team_id,
         "attempt": attempt,
         "run_id": run_id,
-        "model": FIREWORKS_MODEL,
+        "model": candidate_model,
+        "judge_model": judge_model,
         "prompt_sha256": sha256(prompt.encode("utf-8")).hexdigest(),
         "weights": {
             "discovery": DISCOVERY_WEIGHT,
@@ -125,14 +156,15 @@ def _score_case(
     case: EvaluationCase,
     participant_prompt: str,
     public_directory: Path,
-    client: CompletionClient,
+    candidate_client: CompletionClient,
+    judge_client: CompletionClient,
 ) -> dict[str, Any]:
     context, evidence_ids = _load_context(
         public_directory=public_directory,
         context_files=case.context_files,
     )
     answer_started_at = _timestamp()
-    answer_completion = client.complete(
+    answer_completion = candidate_client.complete(
         _answer_messages(
             question=case.question,
             context=context,
@@ -148,7 +180,7 @@ def _score_case(
         evidence_ids=evidence_ids,
     )
     judge_started_at = _timestamp()
-    judge_completion = client.complete(
+    judge_completion = judge_client.complete(
         _judge_messages(
             case=case,
             context=context,
@@ -257,9 +289,14 @@ def _judge_messages(
             "role": "system",
             "content": (
                 "Score the candidate support answer against the supplied reference and "
-                "evidence. Return one JSON object with integer scores from 0 to 100 for "
-                "answer_relevance, instruction_following, and faithfulness, plus a "
-                "reasons object containing one short reason for each score."
+                "evidence. Assign exactly one tier (0, 25, 50, 75, or 100) to each of "
+                "answer_relevance, instruction_following, and faithfulness. Use 0 when "
+                "the criterion is unmet, 25 for major failures, 50 for material errors "
+                "or omissions, 75 for minor errors or omissions, and 100 when fully "
+                "met. Judge only answer quality here; JSON shape, citation validity, "
+                "evidence coverage, and escalation matching are scored separately. "
+                "Return one JSON object with the three tier scores and a reasons object "
+                "containing one short reason for each score."
             ),
         },
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},

@@ -14,6 +14,7 @@ def scoring_result() -> dict[str, object]:
         "attempt": 1,
         "run_id": "run-001",
         "model": "accounts/fireworks/models/deepseek-v4-flash",
+        "judge_model": "accounts/fireworks/models/qwen3p7-plus",
         "prompt_sha256": "a" * 64,
         "weights": {"discovery": 0.75, "holdout": 0.25},
         "overall_score": 87.0,
@@ -103,6 +104,19 @@ def test_trace_bundle_has_answer_and_judge_spans_without_holdout_details() -> No
         "model.answer",
         "evaluation.judge",
     }
+    spans = {span["name"]: span for span in first["span_payload.json"]["spans"]}
+    assert spans["model.answer"]["metadata"]["model"] == (
+        "accounts/fireworks/models/deepseek-v4-flash"
+    )
+    assert spans["evaluation.judge"]["metadata"]["model"] == (
+        "accounts/fireworks/models/qwen3p7-plus"
+    )
+    assert first["run.json"]["judge_model"] == (
+        "accounts/fireworks/models/qwen3p7-plus"
+    )
+    assert first["trace_payload.json"]["traces"][0]["metadata"]["model"] == (
+        "accounts/fireworks/models/deepseek-v4-flash"
+    )
     for item in (
         *first["trace_payload.json"]["traces"],
         *first["span_payload.json"]["spans"],

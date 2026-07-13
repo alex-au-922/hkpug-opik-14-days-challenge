@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from hkpug_challenge.evaluation_bank import load_evaluation_bank
-from hkpug_challenge.fireworks import FIREWORKS_MODEL, FireworksClient
+from hkpug_challenge.fireworks import (
+    FireworksClient,
+    validate_scoring_models,
+)
 from hkpug_challenge.scoring import score_prompt
 from hkpug_challenge.submission import verify_submission
 from hkpug_challenge.traces import write_trace_bundle
@@ -52,6 +55,7 @@ def main() -> int:
             args.evaluation_bank,
             public_directory=args.public_directory,
         )
+        candidate_model, judge_model = _scoring_models()
         result = score_prompt(
             team_id=submission.team_id,
             attempt=args.attempt,
@@ -59,11 +63,18 @@ def main() -> int:
             participant_prompt=submission.prompt_text,
             cases=bank.cases,
             public_directory=args.public_directory,
-            client=FireworksClient(
+            candidate_client=FireworksClient(
                 api_key,
-                model=os.environ.get("FIREWORKS_MODEL", FIREWORKS_MODEL),
+                model=candidate_model,
                 on_retry=_log_retry,
             ),
+            judge_client=FireworksClient(
+                api_key,
+                model=judge_model,
+                on_retry=_log_retry,
+            ),
+            candidate_model=candidate_model,
+            judge_model=judge_model,
             max_calls=args.max_calls,
             on_case_start=_log_progress,
         )
@@ -113,6 +124,13 @@ def _write_private_json(path: Path, payload: dict[str, Any]) -> None:
     )
     if os.name != "nt":
         path.chmod(0o600)
+
+
+def _scoring_models() -> tuple[str, str]:
+    return validate_scoring_models(
+        os.environ.get("FIREWORKS_MODEL", ""),
+        os.environ.get("JUDGE_MODEL", ""),
+    )
 
 
 def _log_progress(current: int, total: int) -> None:

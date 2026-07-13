@@ -31,6 +31,8 @@ def build_trace_bundle(
     team_id = _required_text(scoring_result, "team_id")
     run_id = _required_text(scoring_result, "run_id")
     project_name = f"hkpug-{team_id}-{run_id}"
+    candidate_model = _required_text(scoring_result, "model")
+    judge_model = _required_text(scoring_result, "judge_model")
     discovery = _required_object(scoring_result, "discovery")
     holdout = _aggregate_only(_required_object(scoring_result, "holdout"))
     discovery_cases = _required_list(discovery, "cases")
@@ -60,7 +62,7 @@ def build_trace_bundle(
             "domain": _required_text(case, "domain"),
             "difficulty": _required_text(case, "difficulty"),
             "attempt": _required_int(scoring_result, "attempt"),
-            "model": _required_text(scoring_result, "model"),
+            "model": candidate_model,
         }
         traces.append(
             {
@@ -89,6 +91,7 @@ def build_trace_bundle(
                     "output": output,
                     "metadata": metadata
                     | {
+                        "model": candidate_model,
                         "prompt_tokens": _required_int(usage, "answer_prompt_tokens"),
                         "completion_tokens": _required_int(
                             usage, "answer_completion_tokens"
@@ -112,6 +115,7 @@ def build_trace_bundle(
                     "output": {"criteria": criteria, "reasons": reasons},
                     "metadata": metadata
                     | {
+                        "model": judge_model,
                         "prompt_tokens": _required_int(usage, "judge_prompt_tokens"),
                         "completion_tokens": _required_int(
                             usage, "judge_completion_tokens"
@@ -153,7 +157,8 @@ def build_trace_bundle(
         "run_id": run_id,
         "attempt": _required_int(scoring_result, "attempt"),
         "project_name": project_name,
-        "model": _required_text(scoring_result, "model"),
+        "model": candidate_model,
+        "judge_model": judge_model,
         "prompt_sha256": _required_text(scoring_result, "prompt_sha256"),
         "overall_score": _required_number(scoring_result, "overall_score"),
         "weights": _required_object(scoring_result, "weights"),

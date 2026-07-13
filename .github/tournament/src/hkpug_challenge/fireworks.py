@@ -13,6 +13,8 @@ from .models import Message
 
 FIREWORKS_CHAT_URL = "https://api.fireworks.ai/inference/v1/chat/completions"
 FIREWORKS_MODEL = "accounts/fireworks/models/deepseek-v4-flash"
+JUDGE_MODEL = "accounts/fireworks/models/qwen3p7-plus"
+JUDGE_TIERS = (0, 25, 50, 75, 100)
 JsonObject = dict[str, object]
 Transport = Callable[[str, dict[str, str], JsonObject, float], JsonObject]
 RetryCallback = Callable[[int, int], None]
@@ -23,9 +25,9 @@ JUDGE_RESPONSE_FORMAT: JsonObject = {
         "schema": {
             "type": "object",
             "properties": {
-                "answer_relevance": {"type": "integer"},
-                "instruction_following": {"type": "integer"},
-                "faithfulness": {"type": "integer"},
+                "answer_relevance": {"type": "integer", "enum": JUDGE_TIERS},
+                "instruction_following": {"type": "integer", "enum": JUDGE_TIERS},
+                "faithfulness": {"type": "integer", "enum": JUDGE_TIERS},
                 "reasons": {
                     "type": "object",
                     "properties": {
@@ -68,6 +70,16 @@ class CompletionClient(Protocol):
         max_tokens: int,
         response_format: JsonObject | None = None,
     ) -> Completion: ...
+
+
+def validate_scoring_models(candidate_model: str, judge_model: str) -> tuple[str, str]:
+    if candidate_model == judge_model:
+        raise ValueError("Judge model must differ from the candidate model.")
+    if candidate_model != FIREWORKS_MODEL:
+        raise ValueError(f"FIREWORKS_MODEL must be {FIREWORKS_MODEL}.")
+    if judge_model != JUDGE_MODEL:
+        raise ValueError(f"JUDGE_MODEL must be {JUDGE_MODEL}.")
+    return candidate_model, judge_model
 
 
 class TransientFireworksError(RuntimeError):

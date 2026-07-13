@@ -11,9 +11,16 @@ from hkpug_challenge.evaluation_bank import (
     EvaluationReference,
     EvaluationRubric,
 )
-from hkpug_challenge.fireworks import Completion
+from hkpug_challenge.fireworks import (
+    Completion,
+    FIREWORKS_MODEL,
+    JUDGE_RESPONSE_FORMAT,
+)
 from hkpug_challenge.models import Message
 from hkpug_challenge.scoring import score_prompt
+
+
+JUDGE_MODEL = "accounts/fireworks/models/qwen3p7-plus"
 
 
 class FakeCompletionClient:
@@ -78,8 +85,15 @@ def make_case(case_id: str, partition: str) -> EvaluationCase:
     )
 
 
+def make_cases() -> tuple[EvaluationCase, ...]:
+    return tuple(
+        [make_case(f"DISC-{index:02d}", "discovery") for index in range(1, 41)]
+        + [make_case(f"HOLD-{index:02d}", "holdout") for index in range(1, 11)]
+    )
+
+
 def judge_response(
-    relevance: int = 80, instruction: int = 90, faithfulness: int = 70
+    relevance: int = 75, instruction: int = 100, faithfulness: int = 75
 ) -> str:
     return json.dumps(
         {
@@ -109,54 +123,46 @@ def test_score_prompt_returns_discovery_detail_and_aggregate_holdout(
     tmp_path: Path,
 ) -> None:
     public = write_contexts(tmp_path)
-    cases = (make_case("DISC-01", "discovery"), make_case("HOLD-01", "holdout"))
-    client = FakeCompletionClient(
-        [valid_answer(), judge_response(), valid_answer(), judge_response()]
-    )
+    answer_client = FakeCompletionClient([valid_answer()] * 50)
+    judge_client = FakeCompletionClient([judge_response()] * 50)
 
     result = score_prompt(
         team_id="team-01",
         attempt=1,
         run_id="run-001",
         participant_prompt="Use evidence and return strict JSON.",
-        cases=cases,
+        cases=make_cases(),
         public_directory=public,
-        client=client,
+        candidate_client=answer_client,
+        judge_client=judge_client,
     )
 
-    assert len(client.calls) == 4
-    assert [max_tokens for _messages, max_tokens, _format in client.calls] == [
-        256,
-        384,
-        256,
-        384,
-    ]
-    assert client.calls[0][2] is None
-    assert client.calls[1][2] is not None
-    assert client.calls[2][2] is None
-    assert client.calls[3][2] is not None
-    assert result["overall_score"] == 87.0
-    assert result["discovery"]["score"] == 87.0
-    assert result["holdout"]["score"] == 87.0
-    assert len(result["discovery"]["cases"]) == 1
+    assert len(answer_client.calls) == 50
+    assert len(judge_client.calls) == 50
+    assert all(call[1:] == (256, None) for call in answer_client.calls)
+    assert all(call[1:] == (384, JUDGE_RESPONSE_FORMAT) for call in judge_client.calls)
+    assert result["model"] == FIREWORKS_MODEL
+    assert result["judge_model"] == JUDGE_MODEL
+    assert result["overall_score"] == 88.75
+    assert result["discovery"]["score"] == 88.75
+    assert result["holdout"]["score"] == 88.75
+    assert len(result["discovery"]["cases"]) == 40
     assert "cases" not in result["holdout"]
-    assert result["call_count"] == 4
+    assert result["call_count"] == 100
     serialized = json.dumps(result)
     assert "Use evidence and return strict JSON" not in serialized
     assert "The approved outcome is Alpha." in serialized
     assert "HOLD-01" not in serialized
     assert "reference" not in serialized
     assert "rubric" not in serialized
-    assert "participant_prompt" in client.calls[0][0][-1]["content"]
+    assert "participant_prompt" in answer_client.calls[0][0][-1]["content"]
+    assert "participant_prompt" not in judge_client.calls[0][0][-1]["content"]
 
 
 def test_score_prompt_reports_case_progress_without_case_details(
     tmp_path: Path,
 ) -> None:
     public = write_contexts(tmp_path)
-    client = FakeCompletionClient(
-        [valid_answer(), judge_response(), valid_answer(), judge_response()]
-    )
     progress: list[tuple[int, int]] = []
 
     score_prompt(
@@ -164,13 +170,14 @@ def test_score_prompt_reports_case_progress_without_case_details(
         attempt=1,
         run_id="run-progress",
         participant_prompt="Return JSON.",
-        cases=(make_case("DISC-01", "discovery"), make_case("HOLD-01", "holdout")),
+        cases=make_cases(),
         public_directory=public,
-        client=client,
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=FakeCompletionClient([judge_response()] * 50),
         on_case_start=lambda current, total: progress.append((current, total)),
     )
 
-    assert progress == [(1, 2), (2, 2)]
+    assert progress == [(current, 50) for current in range(1, 51)]
 
 
 def test_score_prompt_applies_partial_deterministic_scores(tmp_path: Path) -> None:
@@ -182,23 +189,16 @@ def test_score_prompt_applies_partial_deterministic_scores(tmp_path: Path) -> No
             "escalate": False,
         }
     )
-    client = FakeCompletionClient(
-        [
-            partial_answer,
-            judge_response(50, 100, 50),
-            partial_answer,
-            judge_response(50, 100, 50),
-        ]
-    )
 
     result = score_prompt(
         team_id="team-01",
         attempt=2,
         run_id="run-002",
         participant_prompt="Return JSON.",
-        cases=(make_case("DISC-01", "discovery"), make_case("HOLD-01", "holdout")),
+        cases=make_cases(),
         public_directory=public,
-        client=client,
+        candidate_client=FakeCompletionClient([partial_answer] * 50),
+        judge_client=FakeCompletionClient([judge_response(50, 100, 50)] * 50),
     )
 
     assert result["overall_score"] == 72.5
@@ -207,7 +207,8 @@ def test_score_prompt_applies_partial_deterministic_scores(tmp_path: Path) -> No
 
 def test_score_prompt_enforces_call_ceiling_before_model_calls(tmp_path: Path) -> None:
     public = write_contexts(tmp_path)
-    client = FakeCompletionClient([])
+    answer_client = FakeCompletionClient([])
+    judge_client = FakeCompletionClient([])
 
     with pytest.raises(ValueError, match="call limit"):
         score_prompt(
@@ -215,18 +216,101 @@ def test_score_prompt_enforces_call_ceiling_before_model_calls(tmp_path: Path) -
             attempt=1,
             run_id="run-003",
             participant_prompt="Return JSON.",
-            cases=(make_case("DISC-01", "discovery"), make_case("HOLD-01", "holdout")),
+            cases=make_cases(),
             public_directory=public,
-            client=client,
-            max_calls=3,
+            candidate_client=answer_client,
+            judge_client=judge_client,
+            max_calls=99,
         )
 
-    assert client.calls == []
+    assert answer_client.calls == []
+    assert judge_client.calls == []
+
+
+def test_score_prompt_requires_all_fifty_cases_before_model_calls(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    answer_client = FakeCompletionClient([])
+    judge_client = FakeCompletionClient([])
+
+    with pytest.raises(ValueError, match="40 discovery and 10 holdout"):
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-incomplete",
+            participant_prompt="Return JSON.",
+            cases=make_cases()[:-1],
+            public_directory=public,
+            candidate_client=answer_client,
+            judge_client=judge_client,
+        )
+
+    assert answer_client.calls == []
+    assert judge_client.calls == []
+
+
+def test_score_prompt_requires_a_distinct_judge_model(tmp_path: Path) -> None:
+    public = write_contexts(tmp_path)
+    answer_client = FakeCompletionClient([])
+    judge_client = FakeCompletionClient([])
+
+    with pytest.raises(ValueError, match="Judge model must differ"):
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-same-model",
+            participant_prompt="Return JSON.",
+            cases=make_cases(),
+            public_directory=public,
+            candidate_client=answer_client,
+            judge_client=judge_client,
+            judge_model=FIREWORKS_MODEL,
+        )
+
+    assert answer_client.calls == []
+    assert judge_client.calls == []
+
+
+@pytest.mark.parametrize(
+    ("candidate_model", "judge_model", "message"),
+    [
+        ("accounts/fireworks/models/other", JUDGE_MODEL, "FIREWORKS_MODEL"),
+        (FIREWORKS_MODEL, "accounts/fireworks/models/other", "JUDGE_MODEL"),
+    ],
+)
+def test_score_prompt_rejects_unapproved_model_configuration_before_calls(
+    tmp_path: Path,
+    candidate_model: str,
+    judge_model: str,
+    message: str,
+) -> None:
+    public = write_contexts(tmp_path)
+    answer_client = FakeCompletionClient([])
+    judge_client = FakeCompletionClient([])
+
+    with pytest.raises(ValueError, match=message):
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-invalid-model",
+            participant_prompt="Return JSON.",
+            cases=make_cases(),
+            public_directory=public,
+            candidate_client=answer_client,
+            judge_client=judge_client,
+            candidate_model=candidate_model,
+            judge_model=judge_model,
+        )
+
+    assert answer_client.calls == []
+    assert judge_client.calls == []
 
 
 def test_score_prompt_does_not_retry_invalid_judge_output(tmp_path: Path) -> None:
     public = write_contexts(tmp_path)
-    client = FakeCompletionClient([valid_answer(), "not-json"])
+    answer_client = FakeCompletionClient([valid_answer()] * 50)
+    judge_client = FakeCompletionClient(["not-json"])
 
     with pytest.raises(ValueError, match="Judge response"):
         score_prompt(
@@ -234,9 +318,58 @@ def test_score_prompt_does_not_retry_invalid_judge_output(tmp_path: Path) -> Non
             attempt=1,
             run_id="run-004",
             participant_prompt="Return JSON.",
-            cases=(make_case("DISC-01", "discovery"),),
+            cases=make_cases(),
             public_directory=public,
-            client=client,
+            candidate_client=answer_client,
+            judge_client=judge_client,
         )
 
-    assert len(client.calls) == 2
+    assert len(answer_client.calls) == 1
+    assert len(judge_client.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "criterion",
+    ["answer_relevance", "instruction_following", "faithfulness"],
+)
+def test_score_prompt_rejects_non_tier_judge_scores(
+    tmp_path: Path, criterion: str
+) -> None:
+    public = write_contexts(tmp_path)
+    response = json.loads(judge_response())
+    response[criterion] = 80
+
+    with pytest.raises(ValueError, match="Judge response"):
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-invalid-tier",
+            participant_prompt="Return JSON.",
+            cases=make_cases(),
+            public_directory=public,
+            candidate_client=FakeCompletionClient([valid_answer()] * 50),
+            judge_client=FakeCompletionClient([json.dumps(response)]),
+        )
+
+
+def test_score_prompt_preserves_granularity_across_all_fifty_cases(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    judge_responses = [judge_response(25, 0, 0)] + [judge_response(0, 0, 0)] * 49
+
+    result = score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-granular",
+        participant_prompt="Return JSON.",
+        cases=make_cases(),
+        public_directory=public,
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=FakeCompletionClient(judge_responses),
+    )
+
+    assert result["discovery"]["criteria"]["answer_relevance"] == 0.12
+    assert result["discovery"]["score"] == 40.12
+    assert result["holdout"]["score"] == 40.0
+    assert result["overall_score"] == 40.09
