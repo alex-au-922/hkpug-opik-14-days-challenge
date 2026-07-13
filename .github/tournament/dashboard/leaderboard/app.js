@@ -62,7 +62,7 @@ function validatePayload(payload) {
   }
   if (
     payload.challenge.max_attempts !== 8 ||
-    payload.challenge.max_daily_attempts !== 2 ||
+    payload.challenge.max_daily_attempts !== 4 ||
     !isRecord(payload.challenge.weights) ||
     payload.challenge.weights.discovery !== 0.75 ||
     payload.challenge.weights.holdout !== 0.25
