@@ -24,10 +24,14 @@ class DashboardParser(HTMLParser):
         self.anchors: list[dict[str, str | None]] = []
         self.links: list[str] = []
         self.scripts: list[str] = []
+        self.site_nav_links: list[tuple[str, str | None, str | None]] = []
         self.h1_count = 0
         self.has_skip_link = False
         self.has_live_region = False
         self.has_alert = False
+        self._in_site_nav = False
+        self._site_nav_anchor: dict[str, str | None] | None = None
+        self._site_nav_text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
@@ -36,8 +40,13 @@ class DashboardParser(HTMLParser):
             self.ids.add(value)
         if tag == "h1":
             self.h1_count += 1
+        if tag == "nav" and values.get("class") == "site-nav":
+            self._in_site_nav = True
         if tag == "a":
             self.anchors.append(values)
+            if self._in_site_nav:
+                self._site_nav_anchor = values
+                self._site_nav_text = []
             if values.get("href") == "#main-content":
                 self.has_skip_link = True
         if values.get("aria-live"):
@@ -48,6 +57,25 @@ class DashboardParser(HTMLParser):
             self.links.append(href)
         if tag == "script" and (src := values.get("src")):
             self.scripts.append(src)
+
+    def handle_data(self, data: str) -> None:
+        if self._site_nav_anchor is not None:
+            self._site_nav_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._site_nav_anchor is not None:
+            label = " ".join("".join(self._site_nav_text).split())
+            self.site_nav_links.append(
+                (
+                    label,
+                    self._site_nav_anchor.get("href"),
+                    self._site_nav_anchor.get("aria-current"),
+                )
+            )
+            self._site_nav_anchor = None
+            self._site_nav_text = []
+        if tag == "nav" and self._in_site_nav:
+            self._in_site_nav = False
 
 
 def parse_page(path: Path) -> tuple[str, DashboardParser]:
@@ -77,6 +105,52 @@ def test_root_page_is_a_participant_focused_challenge_overview() -> None:
         assert noise not in html
 
 
+def test_participant_navigation_is_identical_and_marks_current_page() -> None:
+    pages = {
+        DASHBOARD / "index.html": (
+            ("Overview", "./", "page"),
+            ("Tutorial", "tutorial/", None),
+            ("First submission", "start/", None),
+            ("Submission feedback", "submission-feedback/", None),
+            ("Leaderboard", "leaderboard/", None),
+        ),
+        TUTORIAL / "index.html": (
+            ("Overview", "../", None),
+            ("Tutorial", "./", "page"),
+            ("First submission", "../start/", None),
+            ("Submission feedback", "../submission-feedback/", None),
+            ("Leaderboard", "../leaderboard/", None),
+        ),
+        START / "index.html": (
+            ("Overview", "../", None),
+            ("Tutorial", "../tutorial/", None),
+            ("First submission", "./", "page"),
+            ("Submission feedback", "../submission-feedback/", None),
+            ("Leaderboard", "../leaderboard/", None),
+        ),
+        SUBMISSION_FEEDBACK / "index.html": (
+            ("Overview", "../", None),
+            ("Tutorial", "../tutorial/", None),
+            ("First submission", "../start/", None),
+            ("Submission feedback", "./", "page"),
+            ("Leaderboard", "../leaderboard/", None),
+        ),
+        LEADERBOARD / "index.html": (
+            ("Overview", "../", None),
+            ("Tutorial", "../tutorial/", None),
+            ("First submission", "../start/", None),
+            ("Submission feedback", "../submission-feedback/", None),
+            ("Leaderboard", "./", "page"),
+        ),
+    }
+
+    for page, expected_links in pages.items():
+        html, parser = parse_page(page)
+
+        assert parser.site_nav_links == list(expected_links)
+        assert ">Mini workshop</a>" not in html
+
+
 def test_tutorial_is_the_six_case_mini_workshop_route() -> None:
     page = TUTORIAL / "index.html"
 
@@ -89,7 +163,7 @@ def test_tutorial_is_the_six_case_mini_workshop_route() -> None:
     assert html.count('class="case"') == 6
     assert html.count("Reveal Case ") == 6
     assert "hkpug-opik-mini-workshop-onboarding.zip" in html
-    assert '<a href="./" aria-current="page">Mini workshop</a>' in html
+    assert '<a href="./" aria-current="page">Tutorial</a>' in html
 
 
 def test_mini_workshop_copies_all_questions_answers_and_local_artifacts() -> None:
@@ -194,7 +268,7 @@ def test_participant_pages_distinguish_onboarding_from_submission_feedback() -> 
         and anchor.get("class") == "button button-primary"
         for anchor in start.anchors
     )
-    assert '<a href="./" aria-current="page">Mini workshop</a>' in tutorial_html
+    assert '<a href="./" aria-current="page">Tutorial</a>' in tutorial_html
     assert '<a href="./" aria-current="page">Submission feedback</a>' in feedback_html
     assert 'href="opik/"' not in overview_html
     assert 'href="../opik/"' not in start_html

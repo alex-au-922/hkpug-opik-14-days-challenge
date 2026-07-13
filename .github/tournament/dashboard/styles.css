@@ -1597,10 +1597,8 @@ footer p {
 .onboarding-guide-steps img {
   display: block;
   width: 100%;
-  aspect-ratio: 950 / 780;
+  height: auto;
   border: 1px solid var(--line-strong);
-  object-fit: contain;
-  object-position: top left;
 }
 
 .onboarding-guide-steps figcaption {

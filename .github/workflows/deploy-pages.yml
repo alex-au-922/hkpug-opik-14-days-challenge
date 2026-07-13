@@ -1,6 +1,11 @@
 name: Deploy participant Pages
 
 on:
+  push:
+    branches:
+      - leaderboard
+    paths:
+      - .github/tournament/dashboard/**
   workflow_call:
     inputs:
       leaderboard_ref:
@@ -34,7 +39,7 @@ jobs:
       - name: Check out leaderboard
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ inputs.leaderboard_ref }}
+          ref: ${{ inputs.leaderboard_ref || 'leaderboard' }}
           persist-credentials: false
 
       - name: Configure Pages

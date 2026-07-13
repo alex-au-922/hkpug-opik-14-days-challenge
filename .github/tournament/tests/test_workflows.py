@@ -564,7 +564,9 @@ def test_pages_deploys_participant_site_with_minimal_permissions() -> None:
     assert re.search(r"(?m)^\s+workflow_call:\s*$", trigger)
     assert re.search(r"(?m)^\s+workflow_dispatch:\s*$", trigger)
     assert "leaderboard_ref:" in trigger
-    assert "push:" not in trigger
+    assert re.search(r"(?m)^\s+push:\s*$", trigger)
+    assert re.search(r"(?m)^\s+- leaderboard\s*$", trigger)
+    assert re.search(r"(?m)^\s+- \.github/tournament/dashboard/\*\*\s*$", trigger)
     assert "pull_request:" not in trigger
     assert "workflow_run:" not in trigger
     assert "secrets." not in text
@@ -586,7 +588,7 @@ def test_pages_deploys_participant_site_with_minimal_permissions() -> None:
         assert action in text
     assert re.search(r"(?m)^\s+name:\s*github-pages\s*$", text)
     checkout = named_step(text, r"check out.*leaderboard")
-    assert "ref: ${{ inputs.leaderboard_ref }}" in checkout
+    assert "ref: ${{ inputs.leaderboard_ref || 'leaderboard' }}" in checkout
     assert "path: .github/tournament/dashboard" in text
 
 
