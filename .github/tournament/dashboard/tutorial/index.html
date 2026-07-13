@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Local Opik tutorial for reviewing submission feedback in the HKPUG Opik 14-Day Challenge.">
-    <title>Opik Tutorial | HKPUG Opik Challenge</title>
+    <meta name="description" content="Learn Opik by investigating the six-trace HKPUG mini workshop before entering the 14-day prompt challenge.">
+    <title>Mini Workshop | HKPUG Opik Challenge</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="../styles.css">
   </head>
   <body>
-    <a class="skip-link" href="#main-content">Skip to Opik tutorial steps</a>
+    <a class="skip-link" href="#main-content">Skip to the mini workshop</a>
 
     <header class="site-header participant-header">
       <div class="header-inner">
@@ -23,127 +23,199 @@
         <nav class="site-nav" aria-label="Challenge pages">
           <a href="../">Overview</a>
           <a href="../start/">First submission</a>
-          <a href="./" aria-current="page">Opik tutorial</a>
+          <a href="./" aria-current="page">Mini workshop</a>
+          <a href="../submission-feedback/">Submission feedback</a>
           <a href="../leaderboard/">Leaderboard</a>
         </nav>
       </div>
     </header>
 
     <main id="main-content" class="page-shell tutorial-shell" tabindex="-1">
-      <section class="tutorial-hero" aria-labelledby="opik-title">
+      <section class="tutorial-hero onboarding-hero" aria-labelledby="workshop-title">
         <div>
-          <h1 id="opik-title">Inspect submission feedback in Opik</h1>
-          <p class="tutorial-lede">Decrypt the private submission feedback artifact from your scored run, load its traces into a local workspace, and use the evidence to plan your next prompt change.</p>
+          <p class="eyebrow">Trace debugging lab</p>
+          <h1 id="workshop-title">Learn Opik with six flagged runs.</h1>
+          <p class="tutorial-lede">Six support-agent runs were flagged before release. Load the existing mini-workshop data into local Opik, follow the spans and Experiments, check the small Python codebase, and compare your findings with the answer key.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="assets/hkpug-opik-mini-workshop-onboarding.zip" download>Download workshop data</a>
+            <a class="button" href="#cases">Open the six cases</a>
+          </div>
         </div>
-        <ol class="tutorial-progress" aria-label="Submission feedback stages">
-          <li><span>1</span>Start Opik</li>
-          <li><span>2</span>Decrypt submission feedback</li>
-          <li><span>3</span>Load and review</li>
+        <ol class="tutorial-progress" aria-label="Mini workshop stages">
+          <li><span>1</span>Load the data</li>
+          <li><span>2</span>Inspect six cases</li>
+          <li><span>3</span>Check the answers</li>
         </ol>
       </section>
 
-      <section class="tutorial-section" aria-labelledby="start-opik-title">
+      <section class="tutorial-section" aria-labelledby="setup-title">
         <div class="tutorial-section-header">
           <div>
             <span class="section-number" aria-hidden="true">01</span>
-            <h2 id="start-opik-title">Start Opik locally</h2>
+            <h2 id="setup-title">Load the copied workshop data</h2>
           </div>
-          <p>Install Git, Docker, and Docker Compose first. Then use Opik's public local-deployment scripts from the root of its repository.</p>
+          <p>The download contains the original six traces, 43 spans, feedback scores, Dataset and Experiments records, questions, answers, and Python case files from the HKPUG mini workshop.</p>
         </div>
 
-        <div class="platform-list two-column-list">
-          <article>
-            <h3>macOS or Linux</h3>
+        <div class="onboarding-setup">
+          <div>
+            <h3>Start local Opik</h3>
             <pre><code>git clone https://github.com/comet-ml/opik.git
 cd opik
 ./opik.sh</code></pre>
-          </article>
-          <article>
-            <h3>Windows PowerShell</h3>
-            <pre><code>git clone https://github.com/comet-ml/opik.git
-cd opik
-powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
-          </article>
+            <p>On Windows, run <code>powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code> from the cloned Opik repository.</p>
+          </div>
+          <div>
+            <h3>Extract and import</h3>
+            <pre><code>unzip hkpug-opik-mini-workshop-onboarding.zip
+cd hkpug-opik-mini-workshop-onboarding
+hkpug-opik-helper load \
+  --feedback opik \
+  --opik-url http://localhost:5173/api \
+  --workspace default</code></pre>
+            <p>Use the latest <a href="https://github.com/alex-au-922/hkpug-opik-14-days-challenge/releases/latest">hkpug-opik-helper release</a>. The command imports project <code>HKPUG Mini Workshop Onboarding</code>.</p>
+          </div>
         </div>
-        <p class="command-note">When the services are ready, open <a href="http://localhost:5173"><code>http://localhost:5173</code></a>. See the <a href="https://www.comet.com/docs/opik/self-host/local_deployment">Opik local deployment guide</a> for startup troubleshooting.</p>
+        <p class="artifact-checksum"><strong>SHA-256</strong> <code>ab59ef097dbd5626546f7c56440a8a5c5ba3832798379a9ebcdc391c3b906909</code></p>
       </section>
 
-      <section class="tutorial-section" aria-labelledby="decrypt-title">
+      <section class="tutorial-section" aria-labelledby="open-traces-title">
         <div class="tutorial-section-header">
           <div>
             <span class="section-number" aria-hidden="true">02</span>
-            <h2 id="decrypt-title">Decrypt submission feedback</h2>
+            <h2 id="open-traces-title">Start in the workshop traces</h2>
           </div>
-          <p>Download <code>submission-feedback.cms</code> from the scored run and keep it beside an empty destination folder on your machine.</p>
+          <p>Opik may open a default project or a different Logs tab. Make these two selections before investigating Case 001.</p>
         </div>
-        <div class="command-step">
-          <h3>Open the private bundle</h3>
-          <pre><code>hkpug-opik-helper decrypt --artifact submission-feedback.cms --private-key path/to/private-key.pem --team-cert path/to/team-cert.pem --out feedback</code></pre>
-          <p>The helper verifies the team credentials and writes the decrypted submission feedback files into <code>feedback</code>.</p>
-        </div>
-      </section>
-
-      <section class="tutorial-section" aria-labelledby="load-title">
-        <div class="tutorial-section-header">
-          <div>
-            <span class="section-number" aria-hidden="true">03</span>
-            <h2 id="load-title">Load the traces</h2>
-          </div>
-          <p>Keep Opik running while the helper imports the decrypted bundle into the local default workspace.</p>
-        </div>
-        <div class="command-step">
-          <h3>Import into local Opik</h3>
-          <pre><code>hkpug-opik-helper load --feedback feedback --opik-url http://localhost:5173/api --workspace default</code></pre>
-          <p>The command prints the imported project name and item counts. Re-loading the same bundle is safe.</p>
-        </div>
-      </section>
-
-      <section class="tutorial-section" aria-labelledby="review-title">
-        <div class="tutorial-section-header">
-          <div>
-            <span class="section-number" aria-hidden="true">04</span>
-            <h2 id="review-title">Review before changing the prompt</h2>
-          </div>
-          <p>Open the imported project and use the Traces view to compare behavior across cases.</p>
-        </div>
-        <ol class="plain-checklist review-checklist">
-          <li>Start with the lowest-scoring traces and read the evaluation details.</li>
-          <li>Compare the model input, output, latency, and scored criteria.</li>
-          <li>Look for one repeated weakness that a prompt change can address.</li>
-          <li>Change one idea at a time, then pack and inspect the next submission locally.</li>
+        <ol class="onboarding-guide-steps">
+          <li>
+            <figure>
+              <img src="assets/opik-select-workshop-project.png" width="950" height="780" loading="lazy" alt="Opik project menu with HKPUG Mini Workshop selected above Default Project">
+              <figcaption><span>1</span><div><strong>Choose HKPUG Mini Workshop Onboarding</strong><small>Open the Project menu and select the imported workshop project. Do not use Default Project.</small></div></figcaption>
+            </figure>
+          </li>
+          <li>
+            <figure>
+              <img src="assets/opik-select-traces-tab.png" width="950" height="780" loading="lazy" alt="Opik Logs page with the Traces tab selected between Threads and Spans">
+              <figcaption><span>2</span><div><strong>Open Logs, then Traces</strong><small>Select Traces, not Threads or Spans, to find the six workshop cases.</small></div></figcaption>
+            </figure>
+          </li>
         </ol>
       </section>
 
-      <section class="tutorial-section" aria-labelledby="scope-title">
+      <section class="tutorial-section onboarding-cases" id="cases" aria-labelledby="cases-title">
         <div class="tutorial-section-header">
           <div>
-            <span class="section-number" aria-hidden="true">05</span>
-            <h2 id="scope-title">Understand the submission feedback scope</h2>
+            <span class="section-number" aria-hidden="true">03</span>
+            <h2 id="cases-title">Investigate the six cases</h2>
           </div>
-          <p>Every scored attempt evaluates all 50 cases: 40 discovery cases and 10 holdout cases.</p>
+          <p>Most answers are visible in Opik. Open the extracted <code>code/</code> directory only when a question carries the Code label. Reveal answers after you have inspected the evidence.</p>
         </div>
-        <p>The bundle imports exactly 40 discovery traces. The 10 holdout cases never appear as traces; their results are aggregate-only.</p>
-      </section>
 
-      <section class="tutorial-section" aria-labelledby="anatomy-title">
-        <div class="tutorial-section-header">
-          <div>
-            <span class="section-number" aria-hidden="true">06</span>
-            <h2 id="anatomy-title">Read a discovery trace</h2>
-          </div>
-          <p>Each discovery trace has a <code>model.answer</code> span for the response and an <code>evaluation.judge</code> span for the evaluation.</p>
+        <nav class="case-nav" aria-label="Jump to a case">
+          <a href="#case-001"><b>001</b><span>Policy evidence</span></a>
+          <a href="#case-002"><b>002</b><span>Slow fallback</span></a>
+          <a href="#case-003"><b>003</b><span>Tool argument</span></a>
+          <a href="#case-004"><b>004</b><span>Stream cutoff</span></a>
+          <a href="#case-005"><b>005</b><span>Unsafe context</span></a>
+          <a href="#case-006"><b>006</b><span>Release gate</span></a>
+        </nav>
+
+        <div class="case-list">
+          <details class="case" id="case-001" open>
+            <summary><span class="case-number">001</span><span class="case-title"><strong>Policy evidence does not match customer</strong><small>Wrong policy retrieval / 4 questions</small></span><span class="case-toggle" aria-hidden="true"></span></summary>
+            <div class="case-body">
+              <p class="ba-flag"><strong>BA flag:</strong> The support answer says an activated Starter customer can receive a 30-day refund. BA suspects the answer used the wrong policy.</p>
+              <ol class="question-list" type="A">
+                <li><span class="evidence-badge opik">Opik</span><div>Which short token best describes what the agent answered?<span class="choices">Choose one: <code>eligible-30-day-refund</code>, <code>service-credit-only</code>, <code>not-refundable</code>.</span></div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Which Opik span shows the policy documents retrieved for the answer?</div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Which retrieved document should not have been used for an HK Starter customer?</div></li>
+                <li><span class="evidence-badge code">Code</span><div>In <code>code/shared/fixtures.py</code>, which token describes the correct HK Starter policy for activated seats?<span class="choices">Choose one: <code>activated-refundable</code>, <code>activated-not-refundable</code>, <code>pro-policy-applies</code>.</span></div></li>
+              </ol>
+              <details class="answer-reveal"><summary>Reveal Case 001 answers</summary><dl><div><dt>A</dt><dd><code>eligible-30-day-refund</code></dd></div><div><dt>B</dt><dd><code>001.retrieve_policy</code></dd></div><div><dt>C</dt><dd><code>refund-hk-pro-2026</code></dd></div><div><dt>D</dt><dd><code>activated-not-refundable</code></dd></div></dl><p><strong>Manager decision:</strong> Do not approve without fixing retrieval filters.</p></details>
+            </div>
+          </details>
+
+          <details class="case" id="case-002">
+            <summary><span class="case-number">002</span><span class="case-title"><strong>Slow run with broad retrieval fallback</strong><small>Latency and evidence quality / 4 questions</small></span><span class="case-toggle" aria-hidden="true"></span></summary>
+            <div class="case-body">
+              <p class="ba-flag"><strong>BA flag:</strong> This refund run was much slower than nearby runs. BA wants to know whether the answer is safe or whether the fallback path changed the evidence.</p>
+              <ol class="question-list" type="A">
+                <li><span class="evidence-badge opik">Opik</span><div>Ignoring the root orchestration span, which retrieval span took the longest?</div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Which fallback retrieval span ran after the primary retrieval problem?</div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Did the fallback use stronger or weaker evidence than the primary intended filter?<span class="choices">Choose one: <code>stronger-evidence</code>, <code>weaker-evidence</code>.</span></div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Should the manager approve this run without review?<span class="choices">Choose one: <code>approve</code>, <code>manual-review</code>, <code>reject</code>.</span></div></li>
+              </ol>
+              <details class="answer-reveal"><summary>Reveal Case 002 answers</summary><dl><div><dt>A</dt><dd><code>002.retrieve_policy_primary</code></dd></div><div><dt>B</dt><dd><code>002.retrieve_policy_fallback</code></dd></div><div><dt>C</dt><dd><code>weaker-evidence</code></dd></div><div><dt>D</dt><dd><code>manual-review</code></dd></div></dl><p><strong>Manager decision:</strong> Manual review before release.</p></details>
+            </div>
+          </details>
+
+          <details class="case" id="case-003">
+            <summary><span class="case-number">003</span><span class="case-title"><strong>Tool result is confident but input is wrong</strong><small>Tool-call argument mapping / 4 questions</small></span><span class="case-toggle" aria-hidden="true"></span></summary>
+            <div class="case-body">
+              <p class="ba-flag"><strong>BA flag:</strong> The refund calculator returned a confident "eligible" result, but the customer complained that they are on Starter, not Pro.</p>
+              <ol class="question-list" type="A">
+                <li><span class="evidence-badge opik">Opik</span><div>Which span first shows the parsed request product as <code>starter</code> before the tool call?<span class="choices">Choose one: <code>003.parse_refund_request</code>, <code>003.map_tool_arguments</code>, <code>003.compose_tool_answer</code>.</span></div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Which calculator span receives <code>product: pro</code> in its input?</div></li>
+                <li><span class="evidence-badge code">Code</span><div>In <code>code/cases/case_003_tool_argument.py</code>, what short token names the hard-coded argument or mapping causing the tool to receive <code>product="pro"</code>?<span class="choices">Choose one: <code>product=pro</code>, <code>product=starter</code>, <code>region=hk</code>.</span></div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>What should the manager conclude: tool failure, mapping failure, or model failure?<span class="choices">Choose one: <code>tool-failure</code>, <code>mapping-failure</code>, <code>model-failure</code>.</span></div></li>
+              </ol>
+              <details class="answer-reveal"><summary>Reveal Case 003 answers</summary><dl><div><dt>A</dt><dd><code>003.parse_refund_request</code></dd></div><div><dt>B</dt><dd><code>003.calculate_refund_eligibility</code></dd></div><div><dt>C</dt><dd><code>product=pro</code></dd></div><div><dt>D</dt><dd><code>mapping-failure</code></dd></div></dl><p><strong>Manager decision:</strong> Do not approve until tool argument mapping is fixed.</p></details>
+            </div>
+          </details>
+
+          <details class="case" id="case-004">
+            <summary><span class="case-number">004</span><span class="case-title"><strong>Streamed draft was persisted after cutoff</strong><small>Incomplete generation and persistence / 4 questions</small></span><span class="case-toggle" aria-hidden="true"></span></summary>
+            <div class="case-body">
+              <p class="ba-flag"><strong>BA flag:</strong> The ticket summary looks incomplete. BA wants to know whether this was a model quality issue or an application persistence issue.</p>
+              <ol class="question-list" type="A">
+                <li><span class="evidence-badge opik">Opik</span><div>Which span shows the streamed model output and finish reason?</div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>What finish reason did the model return?</div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Which span persisted the answer despite the incomplete stream?</div></li>
+                <li><span class="evidence-badge code">Code</span><div>In <code>code/cases/case_004_stream_cutoff.py</code>, which missing check should block saving?<span class="choices">Choose one: <code>finish-reason-check</code>, <code>ticket-id-check</code>, <code>region-check</code>.</span></div></li>
+              </ol>
+              <details class="answer-reveal"><summary>Reveal Case 004 answers</summary><dl><div><dt>A</dt><dd><code>004.stream_policy_summary</code></dd></div><div><dt>B</dt><dd><code>length</code></dd></div><div><dt>C</dt><dd><code>004.persist_customer_answer</code></dd></div><div><dt>D</dt><dd><code>finish-reason-check</code></dd></div></dl><p><strong>Manager decision:</strong> Do not approve until incomplete streams are blocked from persistence.</p></details>
+            </div>
+          </details>
+
+          <details class="case" id="case-005">
+            <summary><span class="case-number">005</span><span class="case-title"><strong>Issue summary contains unsafe comment text</strong><small>Untrusted retrieved context / 4 questions</small></span><span class="case-toggle" aria-hidden="true"></span></summary>
+            <div class="case-body">
+              <p class="ba-flag"><strong>BA flag:</strong> The GitHub issue summary includes an internal debug token and tells support to bypass approval.</p>
+              <ol class="question-list" type="A">
+                <li><span class="evidence-badge opik">Opik</span><div>Which retrieved item contains the unsafe instruction?</div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Which span shows that untrusted text was included in the prompt without a boundary?</div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>Which span shows the guardrail result?</div></li>
+                <li><span class="evidence-badge opik">Opik</span><div>What should the manager decide for this summary?<span class="choices">Choose one: <code>approve</code>, <code>block-or-rewrite</code>, <code>manual-review-only</code>.</span></div></li>
+              </ol>
+              <details class="answer-reveal"><summary>Reveal Case 005 answers</summary><dl><div><dt>A</dt><dd><code>issue-4812-attacker-comment</code></dd></div><div><dt>B</dt><dd><code>005.build_issue_prompt</code></dd></div><div><dt>C</dt><dd><code>005.postprocess_guardrail</code></dd></div><div><dt>D</dt><dd><code>block-or-rewrite</code></dd></div></dl><p><strong>Manager decision:</strong> Block the summary and fix untrusted-comment prompt boundaries.</p></details>
+            </div>
+          </details>
+
+          <details class="case" id="case-006">
+            <summary><span class="case-number">006</span><span class="case-title"><strong>Release candidate looks good but gate is weak</strong><small>Experiment metrics and selection / 4 questions</small></span><span class="case-toggle" aria-hidden="true"></span></summary>
+            <div class="case-body">
+              <p class="ba-flag"><strong>BA flag:</strong> The app selected a prompt version for release, but BA believes another candidate is safer.</p>
+              <ol class="question-list" type="A">
+                <li><span class="evidence-badge opik">Opik</span><div>In Logs, which prompt version did the app select?</div></li>
+                <li><span class="evidence-badge experiment">Experiments</span><div>In Experiments, which prompt version should ship based on faithfulness and release-gate scores?</div></li>
+                <li><span class="evidence-badge experiment">Experiments</span><div>Which metric made the selected candidate look attractive?</div></li>
+                <li><span class="evidence-badge code">Code</span><div>In <code>code/cases/case_006_release_gate.py</code>, what short token names the missing release selection condition?<span class="choices">Choose one: <code>faithfulness-expert-gate</code>, <code>cost-only-gate</code>, <code>answer-relevance-gate</code>.</span></div></li>
+              </ol>
+              <details class="answer-reveal"><summary>Reveal Case 006 answers</summary><dl><div><dt>A</dt><dd><code>prompt-v2</code></dd></div><div><dt>B</dt><dd><code>prompt-v3</code></dd></div><div><dt>C</dt><dd><code>answer_relevance</code></dd></div><div><dt>D</dt><dd><code>faithfulness-expert-gate</code></dd></div></dl><p><strong>Manager decision:</strong> Do not ship prompt-v2; ship prompt-v3 after strengthening the gate.</p></details>
+            </div>
+          </details>
         </div>
-        <p>Use the seven score columns to find a pattern: JSON schema, Citation validity, Evidence coverage, Escalation, Answer relevance, Instruction following, and Faithfulness.</p>
       </section>
 
       <section class="next-route" aria-labelledby="next-title">
         <div>
-          <h2 id="next-title">Ready for another run?</h2>
-          <p>Return to the submission guide, package the revised prompt, and check the standings after scoring.</p>
+          <h2 id="next-title">Ready for the 14-day challenge?</h2>
+          <p>You now know how to follow spans, compare evidence and latency, inspect eval scores, and use Experiments. Prepare your first protected prompt submission next.</p>
         </div>
         <div class="next-route-actions">
-          <a class="button button-primary" href="../start/">Prepare the next submission</a>
-          <a class="button" href="../leaderboard/">View leaderboard</a>
+          <a class="button button-primary" href="../start/">Prepare first submission</a>
+          <a class="button" href="../submission-feedback/">How scored feedback works</a>
         </div>
       </section>
     </main>
@@ -153,6 +225,8 @@ powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
         <a href="../">Challenge overview</a>
         <span aria-hidden="true"> / </span>
         <a href="../start/">First submission</a>
+        <span aria-hidden="true"> / </span>
+        <a href="../submission-feedback/">Submission feedback</a>
         <span aria-hidden="true"> / </span>
         <a href="../leaderboard/">Leaderboard</a>
       </p>
