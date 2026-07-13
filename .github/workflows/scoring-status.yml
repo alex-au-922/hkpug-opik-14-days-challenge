@@ -1,0 +1,54 @@
+name: Announce scoring status
+
+on:
+  workflow_run:
+    workflows: ["Validate submission"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  comment:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve the exact pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          EVENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${EXPECTED_REPOSITORY}/actions/runs/${EVENT_RUN_ID}" > /tmp/workflow-run.json
+          test "$(jq -r .conclusion /tmp/workflow-run.json)" = success
+          test "$(jq -r .event /tmp/workflow-run.json)" = pull_request
+          test "$(jq -r .repository.full_name /tmp/workflow-run.json)" = "$EXPECTED_REPOSITORY"
+          test "$EVENT_HEAD_REPOSITORY" != ""
+          test "$EVENT_HEAD_SHA" != ""
+          gh api -H "Accept: application/vnd.github+json" \
+            "repos/${EVENT_HEAD_REPOSITORY}/commits/${EVENT_HEAD_SHA}/pulls" \
+            > /tmp/candidate-pulls.json
+          jq --arg repository "$EVENT_HEAD_REPOSITORY" --arg sha "$EVENT_HEAD_SHA" \
+            '[.[] | select(.base.ref == "main" and .head.repo.full_name == $repository and .head.sha == $sha)]' \
+            /tmp/candidate-pulls.json > /tmp/matching-pulls.json
+          test "$(jq length /tmp/matching-pulls.json)" = 1
+          PR_NUMBER=$(jq -r '.[0].number' /tmp/matching-pulls.json)
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Comment scoring status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Validation completed. The scoring pipeline is queued or running and evaluates 50 cases; this may take a few minutes."
