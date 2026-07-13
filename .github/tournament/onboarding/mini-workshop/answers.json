@@ -1,0 +1,56 @@
+{
+  "001": {
+    "A": "eligible-30-day-refund",
+    "B": "001.retrieve_policy",
+    "C": "refund-hk-pro-2026",
+    "D": "activated-not-refundable",
+    "ba_flag": "The support answer says an activated Starter customer can receive a 30-day refund.",
+    "manager_decision": "Do not approve without fixing retrieval filters.",
+    "title": "Policy evidence does not match customer"
+  },
+  "002": {
+    "A": "002.retrieve_policy_primary",
+    "B": "002.retrieve_policy_fallback",
+    "C": "weaker-evidence",
+    "D": "manual-review",
+    "ba_flag": "This refund run was much slower than nearby runs.",
+    "manager_decision": "Manual review before release.",
+    "title": "Slow run with broad retrieval fallback"
+  },
+  "003": {
+    "A": "003.parse_refund_request",
+    "B": "003.calculate_refund_eligibility",
+    "C": "product=pro",
+    "D": "mapping-failure",
+    "ba_flag": "The refund calculator returned a confident eligible result for a Starter customer.",
+    "manager_decision": "Do not approve until tool argument mapping is fixed.",
+    "title": "Tool result is confident but input is wrong"
+  },
+  "004": {
+    "A": "004.stream_policy_summary",
+    "B": "length",
+    "C": "004.persist_customer_answer",
+    "D": "finish-reason-check",
+    "ba_flag": "The ticket summary looks incomplete.",
+    "manager_decision": "Do not approve until incomplete streams are blocked from persistence.",
+    "title": "Streamed draft was persisted after cutoff"
+  },
+  "005": {
+    "A": "issue-4812-attacker-comment",
+    "B": "005.build_issue_prompt",
+    "C": "005.postprocess_guardrail",
+    "D": "block-or-rewrite",
+    "ba_flag": "The GitHub issue summary includes an internal debug token and tells support to bypass approval.",
+    "manager_decision": "Block the summary and fix untrusted-comment prompt boundaries.",
+    "title": "Issue summary contains unsafe comment text"
+  },
+  "006": {
+    "A": "prompt-v2",
+    "B": "prompt-v3",
+    "C": "answer_relevance",
+    "D": "faithfulness-expert-gate",
+    "ba_flag": "The app selected a prompt version for release, but BA believes another candidate is safer.",
+    "manager_decision": "Do not ship prompt-v2; ship prompt-v3 after strengthening the gate.",
+    "title": "Release candidate looks good but gate is too weak"
+  }
+}

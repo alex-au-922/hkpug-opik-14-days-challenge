@@ -1,0 +1,94 @@
+{
+  "scores": [
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-e78c-7291-84a8-788afd333415",
+      "name": "context_precision",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "The top evidence is Pro/HK and Starter/SG, not Starter/HK.",
+      "source": "sdk",
+      "value": 0.18
+    },
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-8260-7930-9a29-8d663ef1c9b4",
+      "name": "expert_pass_fail",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "Fail: wrong policy context changes the refund decision.",
+      "source": "sdk",
+      "value": 0.0
+    },
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-f695-741a-ac0b-1b37d69b9903",
+      "name": "context_precision",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "Fallback found the right Starter policy but with lower confidence and mixed nearby policy evidence.",
+      "source": "sdk",
+      "value": 0.74
+    },
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-4234-742d-82cb-f48d90f7f359",
+      "name": "faithfulness",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "The answer follows the Starter policy but was produced after fallback retrieval.",
+      "source": "sdk",
+      "value": 0.88
+    },
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-b59e-75fb-a416-aeb478538510",
+      "name": "argument_mapping",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "The mapper changed starter to pro.",
+      "source": "sdk",
+      "value": 0.0
+    },
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-99dc-74e4-93fe-8c65f1f7440e",
+      "name": "stream_complete",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "finish_reason=length means the answer is incomplete.",
+      "source": "sdk",
+      "value": 0.0
+    },
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-becb-735c-bd79-c2c7499df3e5",
+      "name": "persistence_safety",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "Persisted incomplete text.",
+      "source": "sdk",
+      "value": 0.0
+    },
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-54ec-7952-bfee-a3a48c4069aa",
+      "name": "prompt_boundary",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "Untrusted comment was not isolated as data.",
+      "source": "sdk",
+      "value": 0.0
+    },
+    {
+      "author": "workshop-seeder",
+      "category_name": null,
+      "id": "019f2fca-3a06-7bad-9fce-3b61fd84118e",
+      "name": "release_gate_quality",
+      "project_name": "HKPUG Mini Workshop",
+      "reason": "The gate selected the highest relevance answer even though it failed expert review.",
+      "source": "sdk",
+      "value": 0.0
+    }
+  ]
+}

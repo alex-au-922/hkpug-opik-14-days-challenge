@@ -70,6 +70,14 @@ func TestLoadOpikReplaysDiscoveryBundle(t *testing.T) {
 	if result != wantResult {
 		t.Fatalf("result = %#v, want %#v", result, wantResult)
 	}
+	encodedResult, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEncodedResult := `{"project_name":"hkpug-team-07-run-1","trace_count":1,"span_count":2,"trace_feedback_count":1,"span_feedback_count":1}`
+	if string(encodedResult) != wantEncodedResult {
+		t.Fatalf("encoded result = %s, want %s", encodedResult, wantEncodedResult)
+	}
 	wantRequests := []string{
 		"POST /api/v1/private/traces/batch",
 		"POST /api/v1/private/spans/batch",

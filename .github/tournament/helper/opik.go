@@ -24,11 +24,15 @@ type LoadOpikOptions struct {
 }
 
 type LoadOpikResult struct {
-	ProjectName        string `json:"project_name"`
-	TraceCount         int    `json:"trace_count"`
-	SpanCount          int    `json:"span_count"`
-	TraceFeedbackCount int    `json:"trace_feedback_count"`
-	SpanFeedbackCount  int    `json:"span_feedback_count"`
+	ProjectName         string `json:"project_name"`
+	TraceCount          int    `json:"trace_count"`
+	SpanCount           int    `json:"span_count"`
+	TraceFeedbackCount  int    `json:"trace_feedback_count"`
+	SpanFeedbackCount   int    `json:"span_feedback_count"`
+	DatasetCount        int    `json:"dataset_count,omitempty"`
+	DatasetItemCount    int    `json:"dataset_item_count,omitempty"`
+	ExperimentCount     int    `json:"experiment_count,omitempty"`
+	ExperimentItemCount int    `json:"experiment_item_count,omitempty"`
 }
 
 func LoadOpik(options LoadOpikOptions) (LoadOpikResult, error) {
@@ -46,13 +50,35 @@ func LoadOpik(options LoadOpikOptions) (LoadOpikResult, error) {
 		return LoadOpikResult{}, errors.New("Opik URL must not contain credentials, a query, or a fragment")
 	}
 
-	runPayload, err := readJSONFile(options.FeedbackDirectory, "run.json")
+	nativePayload, hasNativeFeatures, err := readOptionalJSONFile(options.FeedbackDirectory, "native_features.json")
 	if err != nil {
 		return LoadOpikResult{}, err
 	}
-	projectName, err := validateDiscoveryRun(runPayload)
+	var nativeFeatures *nativeFeaturesPayload
+	if hasNativeFeatures {
+		nativeFeatures, err = parseNativeFeatures(nativePayload)
+		if err != nil {
+			return LoadOpikResult{}, fmt.Errorf("native_features.json: %w", err)
+		}
+	}
+
+	runPayload, hasRun, err := readOptionalJSONFile(options.FeedbackDirectory, "run.json")
 	if err != nil {
 		return LoadOpikResult{}, err
+	}
+	if !hasRun && nativeFeatures == nil {
+		runPayload, err = readJSONFile(options.FeedbackDirectory, "run.json")
+		if err != nil {
+			return LoadOpikResult{}, err
+		}
+		hasRun = true
+	}
+	projectName := ""
+	if hasRun {
+		projectName, err = validateDiscoveryRun(runPayload)
+		if err != nil {
+			return LoadOpikResult{}, err
+		}
 	}
 
 	type requestSpec struct {
@@ -75,12 +101,18 @@ func LoadOpik(options LoadOpikOptions) (LoadOpikResult, error) {
 		if err != nil {
 			return LoadOpikResult{}, err
 		}
-		count, err := validateCollection(payload, request.collection, request.discovery)
+		count, err := validateCollection(payload, request.collection, request.discovery && nativeFeatures == nil)
 		if err != nil {
 			return LoadOpikResult{}, fmt.Errorf("%s: %w", request.filename, err)
 		}
 		payloads = append(payloads, payload)
 		counts = append(counts, count)
+	}
+	if nativeFeatures != nil {
+		projectName, err = validateCopiedMiniWorkshop(nativeFeatures, payloads, counts, projectName)
+		if err != nil {
+			return LoadOpikResult{}, fmt.Errorf("native_features.json: %w", err)
+		}
 	}
 
 	client := options.Client
@@ -98,13 +130,45 @@ func LoadOpik(options LoadOpikOptions) (LoadOpikResult, error) {
 			return LoadOpikResult{}, err
 		}
 	}
-	return LoadOpikResult{
+	result := LoadOpikResult{
 		ProjectName:        projectName,
 		TraceCount:         counts[0],
 		SpanCount:          counts[1],
 		TraceFeedbackCount: counts[2],
 		SpanFeedbackCount:  counts[3],
-	}, nil
+	}
+	if nativeFeatures != nil {
+		nativeCounts, err := importNativeFeatures(
+			client,
+			strings.TrimRight(options.BaseURL, "/"),
+			options.Workspace,
+			projectName,
+			nativeFeatures,
+		)
+		if err != nil {
+			return LoadOpikResult{}, err
+		}
+		result.DatasetCount = nativeCounts.datasetCount
+		result.DatasetItemCount = nativeCounts.datasetItemCount
+		result.ExperimentCount = nativeCounts.experimentCount
+		result.ExperimentItemCount = nativeCounts.experimentItemCount
+	}
+	return result, nil
+}
+
+func readOptionalJSONFile(directory, filename string) ([]byte, bool, error) {
+	path := filepath.Join(directory, filename)
+	if _, err := os.Lstat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("read feedback file %s: %w", filename, err)
+	}
+	payload, err := readJSONFile(directory, filename)
+	if err != nil {
+		return nil, false, err
+	}
+	return payload, true, nil
 }
 
 func readJSONFile(directory, filename string) ([]byte, error) {
@@ -183,9 +247,20 @@ func validateCollection(payload []byte, collection string, discovery bool) (int,
 }
 
 func sendOpikRequest(client *http.Client, requestURL, method string, payload []byte, workspace string) error {
+	_, err := executeOpikRequest(client, requestURL, method, payload, workspace)
+	return err
+}
+
+func executeOpikRequest(
+	client *http.Client,
+	requestURL, method string,
+	payload []byte,
+	workspace string,
+	allowedStatuses ...int,
+) ([]byte, error) {
 	request, err := http.NewRequest(method, requestURL, bytes.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("create Opik request: %w", err)
+		return nil, fmt.Errorf("create Opik request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/json")
@@ -194,12 +269,23 @@ func sendOpikRequest(client *http.Client, requestURL, method string, payload []b
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("send Opik request: %w", err)
+		return nil, fmt.Errorf("send Opik request: %w", err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		detail, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-		return fmt.Errorf("Opik %s returned %d: %s", request.URL.Path, response.StatusCode, strings.TrimSpace(string(detail)))
+	allowed := response.StatusCode >= 200 && response.StatusCode < 300
+	for _, status := range allowedStatuses {
+		allowed = allowed || response.StatusCode == status
 	}
-	return nil
+	if !allowed {
+		detail, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+		return nil, fmt.Errorf("Opik %s returned %d: %s", request.URL.Path, response.StatusCode, strings.TrimSpace(string(detail)))
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxOpikPayloadBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read Opik %s response: %w", request.URL.Path, err)
+	}
+	if len(body) > maxOpikPayloadBytes {
+		return nil, fmt.Errorf("Opik %s response exceeds the size limit", request.URL.Path)
+	}
+	return body, nil
 }

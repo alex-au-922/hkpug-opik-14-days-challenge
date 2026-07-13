@@ -67,8 +67,31 @@ def test_readme_is_participant_facing() -> None:
         assert forbidden not in readme.lower()
 
 
-def test_opik_tutorial_content_is_participant_only() -> None:
+def test_mini_workshop_content_is_participant_only() -> None:
     page = DASHBOARD / "tutorial" / "index.html"
+
+    assert page.is_file()
+    tutorial = page.read_text(encoding="utf-8").lower()
+    for required in (
+        "participant guide",
+        "mini workshop",
+        "six flagged runs",
+        "reveal case 006 answers",
+        "hkpug-opik-mini-workshop-onboarding.zip",
+    ):
+        assert required in tutorial
+    for forbidden in (
+        "group-00.opik-workshop.python.hk",
+        "issues/new/choose",
+        "maintainer",
+        "trusted scorer",
+        ".github/tournament",
+    ):
+        assert forbidden not in tutorial
+
+
+def test_submission_feedback_content_is_participant_only() -> None:
+    page = DASHBOARD / "submission-feedback" / "index.html"
 
     assert page.is_file()
     tutorial = page.read_text(encoding="utf-8").lower()

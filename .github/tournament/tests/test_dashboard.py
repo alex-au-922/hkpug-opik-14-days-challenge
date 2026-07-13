@@ -13,6 +13,7 @@ LEADERBOARD = DASHBOARD / "leaderboard"
 START = DASHBOARD / "start"
 OPIK = DASHBOARD / "opik"
 TUTORIAL = DASHBOARD / "tutorial"
+SUBMISSION_FEEDBACK = DASHBOARD / "submission-feedback"
 
 
 class DashboardParser(HTMLParser):
@@ -76,7 +77,7 @@ def test_root_page_is_a_participant_focused_challenge_overview() -> None:
         assert noise not in html
 
 
-def test_tutorial_is_the_canonical_opik_participant_route() -> None:
+def test_tutorial_is_the_six_case_mini_workshop_route() -> None:
     page = TUTORIAL / "index.html"
 
     assert page.is_file()
@@ -84,17 +85,77 @@ def test_tutorial_is_the_canonical_opik_participant_route() -> None:
     assert parser.h1_count == 1
     assert parser.has_skip_link
     assert {"header", "main", "section", "nav", "footer"} <= set(parser.tags)
-    assert "Inspect submission feedback in Opik" in html
-    assert '<a href="./" aria-current="page">Opik tutorial</a>' in html
+    assert "Learn Opik with six flagged runs." in html
+    assert html.count('class="case"') == 6
+    assert html.count("Reveal Case ") == 6
+    assert "hkpug-opik-mini-workshop-onboarding.zip" in html
+    assert '<a href="./" aria-current="page">Mini workshop</a>' in html
 
 
-def test_legacy_opik_route_redirects_to_tutorial_with_url_state() -> None:
+def test_mini_workshop_copies_all_questions_answers_and_local_artifacts() -> None:
+    html, _ = parse_page(TUTORIAL / "index.html")
+
+    for title in (
+        "Policy evidence does not match customer",
+        "Slow run with broad retrieval fallback",
+        "Tool result is confident but input is wrong",
+        "Streamed draft was persisted after cutoff",
+        "Issue summary contains unsafe comment text",
+        "Release candidate looks good but gate is weak",
+    ):
+        assert title in html
+    for answer in (
+        "eligible-30-day-refund",
+        "001.retrieve_policy",
+        "refund-hk-pro-2026",
+        "activated-not-refundable",
+        "002.retrieve_policy_primary",
+        "002.retrieve_policy_fallback",
+        "weaker-evidence",
+        "manual-review",
+        "003.calculate_refund_eligibility",
+        "product=pro",
+        "mapping-failure",
+        "004.stream_policy_summary",
+        "length",
+        "004.persist_customer_answer",
+        "finish-reason-check",
+        "issue-4812-attacker-comment",
+        "005.build_issue_prompt",
+        "005.postprocess_guardrail",
+        "block-or-rewrite",
+        "prompt-v2",
+        "prompt-v3",
+        "answer_relevance",
+        "faithfulness-expert-gate",
+    ):
+        assert answer in html
+    for asset in (
+        "hkpug-opik-mini-workshop-onboarding.zip",
+        "hkpug-opik-mini-workshop-onboarding.zip.sha256",
+        "opik-select-workshop-project.png",
+        "opik-select-traces-tab.png",
+    ):
+        assert (TUTORIAL / "assets" / asset).is_file()
+    assert "Experiments" in html
+    assert "43 spans" in html
+    assert "issues/new/choose" not in html
+    assert "group-00.opik-workshop.python.hk" not in html
+
+
+def test_legacy_opik_route_redirects_to_submission_feedback_with_url_state() -> None:
     html, _ = parse_page(OPIK / "index.html")
 
-    assert '<link rel="canonical" href="../tutorial/">' in html
+    assert '<link rel="canonical" href="../submission-feedback/">' in html
     assert '<meta name="robots" content="noindex">' in html
-    assert 'location.replace("../tutorial/" + location.search + location.hash);' in html
-    assert '<a href="../tutorial/">Continue to the Opik tutorial</a>' in html
+    assert (
+        'location.replace("../submission-feedback/" + location.search + location.hash);'
+        in html
+    )
+    assert (
+        '<a href="../submission-feedback/">Continue to the submission feedback guide</a>'
+        in html
+    )
     for moved_content in (
         "Start Opik locally",
         "hkpug-opik-helper",
@@ -104,30 +165,37 @@ def test_legacy_opik_route_redirects_to_tutorial_with_url_state() -> None:
         assert moved_content not in html
 
 
-def test_participant_pages_link_prominently_to_opik_tutorial() -> None:
+def test_participant_pages_distinguish_onboarding_from_submission_feedback() -> None:
     tutorial_page = TUTORIAL / "index.html"
+    feedback_page = SUBMISSION_FEEDBACK / "index.html"
 
     assert tutorial_page.is_file()
+    assert feedback_page.is_file()
     overview_html, overview = parse_page(DASHBOARD / "index.html")
     start_html, start = parse_page(START / "index.html")
     tutorial_html, _ = parse_page(tutorial_page)
+    feedback_html, _ = parse_page(feedback_page)
 
-    assert overview_html.count('<a href="tutorial/">Opik tutorial</a>') >= 2
+    assert overview_html.count('href="tutorial/"') >= 3
+    assert overview_html.count('href="submission-feedback/"') >= 3
     assert any(
-        anchor.get("href") == "tutorial/" and anchor.get("class") == "button"
+        anchor.get("href") == "tutorial/"
+        and anchor.get("class") == "button button-primary"
         for anchor in overview.anchors
     )
     assert any(
         anchor.get("href") == "tutorial/" and anchor.get("class") == "route-link"
         for anchor in overview.anchors
     )
-    assert start_html.count('<a href="../tutorial/">Opik tutorial</a>') >= 2
+    assert start_html.count('href="../tutorial/"') >= 2
+    assert start_html.count('href="../submission-feedback/"') >= 3
     assert any(
-        anchor.get("href") == "../tutorial/"
+        anchor.get("href") == "../submission-feedback/"
         and anchor.get("class") == "button button-primary"
         for anchor in start.anchors
     )
-    assert '<a href="./" aria-current="page">Opik tutorial</a>' in tutorial_html
+    assert '<a href="./" aria-current="page">Mini workshop</a>' in tutorial_html
+    assert '<a href="./" aria-current="page">Submission feedback</a>' in feedback_html
     assert 'href="opik/"' not in overview_html
     assert 'href="../opik/"' not in start_html
 
@@ -157,8 +225,8 @@ def test_first_submission_tutorial_is_complete_and_cross_platform() -> None:
     assert "uv run" not in html
 
 
-def test_opik_tutorial_uses_only_public_helper_commands() -> None:
-    page = TUTORIAL / "index.html"
+def test_submission_feedback_guide_uses_only_public_helper_commands() -> None:
+    page = SUBMISSION_FEEDBACK / "index.html"
 
     assert page.is_file()
     html, parser = parse_page(page)
@@ -193,8 +261,8 @@ def test_opik_tutorial_uses_only_public_helper_commands() -> None:
         assert noise not in html
 
 
-def test_opik_tutorial_explains_the_tournament_trace_contract() -> None:
-    page = TUTORIAL / "index.html"
+def test_submission_feedback_guide_explains_the_tournament_trace_contract() -> None:
+    page = SUBMISSION_FEEDBACK / "index.html"
 
     assert page.is_file()
     html, _ = parse_page(page)
