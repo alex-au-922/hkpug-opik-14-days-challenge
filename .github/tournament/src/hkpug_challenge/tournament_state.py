@@ -9,7 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Sequence
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from .leaderboard import (
     AttemptReserved,
@@ -59,6 +59,55 @@ class _Partition(BaseModel):
     criteria: _Criteria
 
 
+class _TokenBucket(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt_tokens: StrictInt = Field(ge=0)
+    completion_tokens: StrictInt = Field(ge=0)
+    total_tokens: StrictInt = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_totals(self) -> _TokenBucket:
+        if self.total_tokens != self.prompt_tokens + self.completion_tokens:
+            raise ValueError(
+                "token_usage bucket total_tokens must equal prompt_tokens + completion_tokens."
+            )
+        return self
+
+
+class _TokenUsage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate: _TokenBucket
+    judge: _TokenBucket
+    total: _TokenBucket
+
+    @model_validator(mode="after")
+    def validate_totals(self) -> _TokenUsage:
+        if (
+            self.total.prompt_tokens
+            != self.candidate.prompt_tokens + self.judge.prompt_tokens
+        ):
+            raise ValueError(
+                "token_usage total prompt_tokens must equal candidate + judge prompt_tokens."
+            )
+        if (
+            self.total.completion_tokens
+            != self.candidate.completion_tokens + self.judge.completion_tokens
+        ):
+            raise ValueError(
+                "token_usage total completion_tokens must equal candidate + judge completion_tokens."
+            )
+        if (
+            self.total.total_tokens
+            != self.candidate.total_tokens + self.judge.total_tokens
+        ):
+            raise ValueError(
+                "token_usage total total_tokens must equal candidate + judge total_tokens."
+            )
+        return self
+
+
 class _Summary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -71,6 +120,7 @@ class _Summary(BaseModel):
     overall_score: float = Field(ge=0, le=100)
     discovery: _Partition
     holdout: _Partition
+    token_usage: _TokenUsage
     call_count: int = Field(ge=1, le=100)
     started_at: datetime
     completed_at: datetime

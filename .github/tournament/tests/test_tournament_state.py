@@ -1,15 +1,43 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
+from typing import cast
+
+import pytest
+from pydantic import ValidationError
 
 from hkpug_challenge.leaderboard import Challenge, load_events
 from hkpug_challenge.tournament_state import publish_score, reserve_submission
 
 
 NOW = datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc)
+SummaryPayload = dict[str, object]
+SummaryMutator = Callable[[SummaryPayload], None]
+
+
+def _remove_token_usage(payload: SummaryPayload) -> None:
+    del payload["token_usage"]
+
+
+def _set_negative_candidate_prompt_tokens(payload: SummaryPayload) -> None:
+    _token_bucket(payload, "candidate")["prompt_tokens"] = -1
+
+
+def _set_candidate_total_mismatch(payload: SummaryPayload) -> None:
+    _token_bucket(payload, "candidate")["total_tokens"] = 999
+
+
+def _set_aggregate_total_mismatch(payload: SummaryPayload) -> None:
+    _token_bucket(payload, "total")["total_tokens"] = 999
+
+
+def _token_bucket(payload: SummaryPayload, name: str) -> dict[str, object]:
+    token_usage = cast(dict[str, object], payload["token_usage"])
+    return cast(dict[str, object], token_usage[name])
 
 
 def test_reservation_file_is_append_only_and_idempotent(tmp_path: Path) -> None:
@@ -65,10 +93,68 @@ def test_publish_score_appends_event_and_writes_public_board(tmp_path: Path) -> 
     assert len(load_events(events_path.read_text(encoding="utf-8"))) == 2
     assert board.teams[0].best.overall_score == 75.0
     assert board.teams[0].attempts_used == 1
+    events_text = events_path.read_text(encoding="utf-8").lower()
     public_text = board_path.read_text(encoding="utf-8").lower()
+    assert "token_usage" not in events_text
     assert "submission_identity" not in public_text
     assert "prompt_sha256" not in public_text
     assert "question" not in public_text
+    assert "token_usage" not in public_text
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        pytest.param(
+            _remove_token_usage,
+            "token_usage",
+            id="missing-token-usage",
+        ),
+        pytest.param(
+            _set_negative_candidate_prompt_tokens,
+            "greater than or equal to 0",
+            id="negative-token-count",
+        ),
+        pytest.param(
+            _set_candidate_total_mismatch,
+            "total_tokens",
+            id="bucket-total-mismatch",
+        ),
+        pytest.param(
+            _set_aggregate_total_mismatch,
+            "total",
+            id="aggregate-total-mismatch",
+        ),
+    ],
+)
+def test_publish_score_rejects_missing_or_malformed_token_usage(
+    tmp_path: Path,
+    mutate: SummaryMutator,
+    message: str,
+) -> None:
+    events_path = tmp_path / "events.jsonl"
+    board_path = tmp_path / "dashboard" / "leaderboard.json"
+    summary_path = tmp_path / "summary.json"
+    reservation = reserve_submission(
+        events_path=events_path,
+        team_id="group-01",
+        display_name="Group 01",
+        prompt_sha256=_digest("prompt"),
+        head_sha="1" * 40,
+        reserved_at=NOW,
+    )
+    summary = _summary(prompt_sha256=_digest("prompt"))
+    mutate(summary)
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+    with pytest.raises(ValidationError, match=message):
+        publish_score(
+            events_path=events_path,
+            summary_path=summary_path,
+            submission_identity=reservation.submission_identity,
+            challenge=_challenge(),
+            leaderboard_path=board_path,
+        )
 
 
 def _summary(*, prompt_sha256: str) -> dict[str, object]:
@@ -104,6 +190,23 @@ def _summary(*, prompt_sha256: str) -> dict[str, object]:
                 "answer_relevance": 12.0,
                 "instruction_following": 9.0,
                 "faithfulness": 15.0,
+            },
+        },
+        "token_usage": {
+            "candidate": {
+                "prompt_tokens": 5000,
+                "completion_tokens": 1000,
+                "total_tokens": 6000,
+            },
+            "judge": {
+                "prompt_tokens": 5000,
+                "completion_tokens": 1000,
+                "total_tokens": 6000,
+            },
+            "total": {
+                "prompt_tokens": 10000,
+                "completion_tokens": 2000,
+                "total_tokens": 12000,
             },
         },
         "call_count": 100,
