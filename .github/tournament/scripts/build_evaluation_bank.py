@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _authoritative_repository_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[3]
 
 
 def main() -> int:

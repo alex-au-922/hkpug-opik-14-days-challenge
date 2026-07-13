@@ -94,16 +94,18 @@ def write_evaluation_inputs(root: Path) -> tuple[Path, list[JsonDict]]:
         for domain, _prefix in DOMAINS
     }
 
-    for domain, prefix in DOMAINS:
+    for domain_position, (domain, prefix) in enumerate(DOMAINS):
         cases: list[JsonDict] = []
+        holdout_position = domain_position // 2 + 1
         for index, public_case in enumerate(public_case_by_domain[domain], start=1):
-            partition = "holdout" if index == 5 else "discovery"
+            partition = "holdout" if index == holdout_position else "discovery"
+            difficulty = "hard" if index in {4, 5} else public_case["difficulty"]
             cases.append(
                 {
                     "case_id": f"{prefix}-EVAL-{index:02d}",
                     "partition": partition,
                     "domain": domain,
-                    "difficulty": public_case["difficulty"],
+                    "difficulty": difficulty,
                     "question": (
                         f"Private evaluation question for {prefix}-EVAL-{index:02d}"
                     ),
@@ -219,8 +221,17 @@ def test_build_evaluation_bank_writes_canonical_json_and_fixed_partitions(
         {domain: 5 for domain, _prefix in DOMAINS}
     )
     assert Counter(case.difficulty for case in reloaded.cases) == Counter(
-        {"easy": 10, "standard": 30, "hard": 10}
+        {"easy": 10, "standard": 20, "hard": 20}
     )
+    assert {
+        partition: Counter(
+            case.difficulty for case in reloaded.cases if case.partition == partition
+        )
+        for partition in ("discovery", "holdout")
+    } == {
+        "discovery": Counter({"easy": 8, "standard": 16, "hard": 16}),
+        "holdout": Counter({"easy": 2, "standard": 4, "hard": 4}),
+    }
     assert Counter(
         case.domain for case in reloaded.cases if case.partition == "holdout"
     ) == Counter({domain: 1 for domain, _prefix in DOMAINS})
@@ -311,7 +322,14 @@ def mutate_second_holdout_for_domain(
     payloads: list[JsonDict], _public_cases: list[JsonDict]
 ) -> None:
     cast_case(payloads, 0, 1)["partition"] = "holdout"
-    cast_case(payloads, 1, 4)["partition"] = "discovery"
+    cast_case(payloads, 1, 0)["partition"] = "discovery"
+
+
+def mutate_unbalanced_partition_difficulty(
+    payloads: list[JsonDict], _public_cases: list[JsonDict]
+) -> None:
+    cast_case(payloads, 0, 0)["difficulty"] = "hard"
+    cast_case(payloads, 0, 3)["difficulty"] = "easy"
 
 
 def mutate_wrong_total_case_count(
@@ -335,6 +353,7 @@ def mutate_wrong_total_case_count(
         (mutate_extra_case_field, "Extra inputs are not permitted"),
         (mutate_extra_root_field, "Extra inputs are not permitted"),
         (mutate_second_holdout_for_domain, "exactly one holdout"),
+        (mutate_unbalanced_partition_difficulty, "balance difficulty"),
         (mutate_wrong_total_case_count, "exactly 50 cases"),
     ],
 )
@@ -476,10 +495,17 @@ def test_build_evaluation_bank_rejects_replacement_attempts(
 def test_build_script_uses_trusted_script_location_for_repo_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    script_path = tmp_path / "authoritative" / "scripts" / "build_evaluation_bank.py"
+    repository_root = tmp_path / "authoritative"
+    script_path = (
+        repository_root
+        / ".github"
+        / "tournament"
+        / "scripts"
+        / "build_evaluation_bank.py"
+    )
     script_path.parent.mkdir(parents=True)
     script_path.write_text("# fake script path\n", encoding="utf-8")
-    input_directory = script_path.parents[1] / ".local" / "evaluation" / "domains"
+    input_directory = repository_root / ".local" / "evaluation" / "domains"
     input_directory.mkdir(parents=True)
     (tmp_path / "elsewhere").mkdir(parents=True)
     captured: dict[str, Path] = {}
@@ -509,10 +535,10 @@ def test_build_script_uses_trusted_script_location_for_repo_root(
     )
 
     assert script_module.main() == 0
-    assert captured["repository_root"] == script_path.parents[1]
+    assert captured["repository_root"] == repository_root
     assert (
         captured["output_path"]
-        == script_path.parents[1] / ".local" / "evaluation" / "evaluation_bank.json"
+        == repository_root / ".local" / "evaluation" / "evaluation_bank.json"
     )
 
 

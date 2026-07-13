@@ -24,8 +24,12 @@ from .dataset import PUBLIC_DIRECTORY, load_public_cases
 from .models import PublicCase
 
 
-DIFFICULTY_COUNTS = {"easy": 10, "standard": 30, "hard": 10}
+DIFFICULTY_COUNTS = {"easy": 10, "standard": 20, "hard": 20}
 PARTITION_COUNTS = {"discovery": 40, "holdout": 10}
+PARTITION_DIFFICULTY_COUNTS = {
+    "discovery": {"easy": 8, "standard": 16, "hard": 16},
+    "holdout": {"easy": 2, "standard": 4, "hard": 4},
+}
 EXPECTED_CASES_PER_DOMAIN = 5
 EXPECTED_HOLDOUTS_PER_DOMAIN = 1
 EXPECTED_SCHEMA_VERSION = 1
@@ -381,7 +385,20 @@ def _validate_evaluation_bank(bank: EvaluationBank, public_directory: Path) -> N
 
     difficulty_counts = Counter(case.difficulty for case in bank.cases)
     if dict(difficulty_counts) != DIFFICULTY_COUNTS:
-        raise ValueError("Evaluation bank must preserve the 10/30/10 difficulty mix.")
+        raise ValueError("Evaluation bank must preserve the 10/20/20 difficulty mix.")
+
+    partition_difficulty_counts = {
+        partition: dict(
+            Counter(
+                case.difficulty for case in bank.cases if case.partition == partition
+            )
+        )
+        for partition in PARTITION_COUNTS
+    }
+    if partition_difficulty_counts != PARTITION_DIFFICULTY_COUNTS:
+        raise ValueError(
+            "Evaluation bank must balance difficulty across discovery and holdout."
+        )
 
     allowed_difficulties = set(DIFFICULTY_COUNTS)
     for case in bank.cases:
