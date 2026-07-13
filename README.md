@@ -4,8 +4,9 @@ Improve one support-answer prompt over as many as eight scored attempts. Each
 attempt returns encrypted feedback that your team can inspect in Opik before
 revising the next prompt.
 
-[First submission tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/start/) |
-[Opik tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/tutorial/) |
+[Six-case mini workshop](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/tutorial/) |
+[First submission guide](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/start/) |
+[Submission feedback guide](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/submission-feedback/) |
 [Live leaderboard](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/leaderboard/)
 
 ## Rules
@@ -16,6 +17,11 @@ revising the next prompt.
 - Keep your team private key and plaintext prompt out of Git.
 
 ## First submission
+
+New to Opik? Complete the
+[six-case mini workshop](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/tutorial/)
+first. It includes a public local-Opik dataset, the original 24 workshop
+questions, Python case files, and revealable answers.
 
 Download `hkpug-opik-helper` for your platform from the
 [latest release](https://github.com/alex-au-922/hkpug-opik-14-days-challenge/releases/latest).
@@ -58,9 +64,9 @@ git push
 
 ## Review feedback
 
-After scoring, download `submission-feedback.cms` from the pull request
-comment's artifact link. Decrypt it and load the traces into a running local
-Opik instance:
+After scoring, use the workflow link in the pull request comment to download the
+team-encrypted artifact ZIP. Extract `submission-feedback.cms`, decrypt it, and
+load the traces into a running local Opik instance:
 
 ```sh
 hkpug-opik-helper decrypt \
@@ -69,6 +75,6 @@ hkpug-opik-helper decrypt \
 hkpug-opik-helper load
 ```
 
-Follow the [Opik tutorial](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/tutorial/)
+Follow the [submission feedback guide](https://alex-au-922.github.io/hkpug-opik-14-days-challenge/submission-feedback/)
 for setup and review guidance. The practice cases are in [`public`](public), and
 the supplied prompts are in [`starter`](starter).
