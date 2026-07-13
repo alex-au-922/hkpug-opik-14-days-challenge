@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from hkpug_challenge import fireworks
+from hkpug_challenge.scoring import MAX_RUN_TOKENS
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -16,6 +17,10 @@ def test_tournament_models_have_distinct_supported_fireworks_defaults() -> None:
     assert fireworks.FIREWORKS_MODEL == FIREWORKS_MODEL
     assert getattr(fireworks, "JUDGE_MODEL", None) == JUDGE_MODEL
     assert JUDGE_MODEL != FIREWORKS_MODEL
+
+
+def test_scoring_uses_the_documented_run_token_budget() -> None:
+    assert MAX_RUN_TOKENS == 500_000
 
 
 def test_trusted_scoring_passes_repository_model_variables_to_the_scorer() -> None:

@@ -17,14 +17,15 @@ from hkpug_challenge.fireworks import (
     JUDGE_RESPONSE_FORMAT,
 )
 from hkpug_challenge.models import Message
-from hkpug_challenge.scoring import score_prompt
+from hkpug_challenge.playground import FIXED_SYSTEM_PROMPT
+from hkpug_challenge.scoring import MAX_RUN_TOKENS, score_prompt
 
 
 JUDGE_MODEL = "accounts/fireworks/models/qwen3p7-plus"
 
 
 class FakeCompletionClient:
-    def __init__(self, responses: Sequence[str]) -> None:
+    def __init__(self, responses: Sequence[Completion | str]) -> None:
         self._responses = iter(responses)
         self.calls: list[tuple[tuple[Message, ...], int, dict[str, object] | None]] = []
 
@@ -36,11 +37,10 @@ class FakeCompletionClient:
         response_format: dict[str, object] | None = None,
     ) -> Completion:
         self.calls.append((messages, max_tokens, response_format))
-        return Completion(
-            content=next(self._responses),
-            prompt_tokens=100,
-            completion_tokens=20,
-        )
+        response = next(self._responses)
+        if isinstance(response, Completion):
+            return response
+        return Completion(content=response, prompt_tokens=100, completion_tokens=20)
 
 
 def write_contexts(root: Path) -> Path:
@@ -68,6 +68,7 @@ def make_case(case_id: str, partition: str) -> EvaluationCase:
         partition=partition,
         domain="test-domain",
         difficulty="standard",
+        archetype="multi_source_synthesis",
         question=f"What is the approved outcome for {case_id}?",
         context_files=("contexts/handbook.md", "contexts/domain.md"),
         reference=EvaluationReference(
@@ -148,6 +149,23 @@ def test_score_prompt_returns_discovery_detail_and_aggregate_holdout(
     assert result["holdout"]["score"] == 88.75
     assert len(result["discovery"]["cases"]) == 40
     assert "cases" not in result["holdout"]
+    assert result["token_usage"] == {
+        "candidate": {
+            "prompt_tokens": 5000,
+            "completion_tokens": 1000,
+            "total_tokens": 6000,
+        },
+        "judge": {
+            "prompt_tokens": 5000,
+            "completion_tokens": 1000,
+            "total_tokens": 6000,
+        },
+        "total": {
+            "prompt_tokens": 10000,
+            "completion_tokens": 2000,
+            "total_tokens": 12000,
+        },
+    }
     assert result["call_count"] == 100
     serialized = json.dumps(result)
     assert "Use evidence and return strict JSON" not in serialized
@@ -225,6 +243,91 @@ def test_score_prompt_enforces_call_ceiling_before_model_calls(tmp_path: Path) -
 
     assert answer_client.calls == []
     assert judge_client.calls == []
+
+
+def test_score_prompt_uses_documented_default_run_token_limit(tmp_path: Path) -> None:
+    public = write_contexts(tmp_path)
+    answer_client = FakeCompletionClient(
+        [
+            Completion(
+                content=valid_answer(),
+                prompt_tokens=MAX_RUN_TOKENS,
+                completion_tokens=1,
+            )
+        ]
+    )
+    judge_client = FakeCompletionClient([])
+
+    with pytest.raises(ValueError, match="500000 token limit"):
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-over-budget-default",
+            participant_prompt="Return JSON.",
+            cases=make_cases(),
+            public_directory=public,
+            candidate_client=answer_client,
+            judge_client=judge_client,
+        )
+
+    assert len(answer_client.calls) == 1
+    assert judge_client.calls == []
+
+
+def test_score_prompt_rejects_cumulative_usage_above_configured_limit(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    answer_client = FakeCompletionClient(
+        [
+            Completion(content=valid_answer(), prompt_tokens=100, completion_tokens=20),
+            Completion(content=valid_answer(), prompt_tokens=100, completion_tokens=20),
+        ]
+    )
+    judge_client = FakeCompletionClient(
+        [
+            Completion(
+                content=judge_response(),
+                prompt_tokens=100,
+                completion_tokens=20,
+            )
+        ]
+    )
+
+    with pytest.raises(ValueError, match="250 token limit"):
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-over-budget-configured",
+            participant_prompt="Return JSON.",
+            cases=make_cases(),
+            public_directory=public,
+            candidate_client=answer_client,
+            judge_client=judge_client,
+            max_run_tokens=250,
+        )
+
+    assert len(answer_client.calls) == 2
+    assert len(judge_client.calls) == 1
+
+
+def test_fixed_system_prompt_is_a_neutral_transport_wrapper() -> None:
+    assert (
+        FIXED_SYSTEM_PROMPT
+        == "You are running a support-answer prompt tournament. Follow the "
+        "participant prompt to answer the supplied question."
+    )
+    system_prompt = FIXED_SYSTEM_PROMPT.casefold()
+    for forbidden in (
+        "context",
+        "data",
+        "authority",
+        "authoritative",
+        "citation",
+        "inject",
+        "escalat",
+    ):
+        assert forbidden not in system_prompt
 
 
 def test_score_prompt_requires_all_fifty_cases_before_model_calls(

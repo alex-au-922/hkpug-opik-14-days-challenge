@@ -33,11 +33,46 @@ PARTITION_DIFFICULTY_COUNTS = {
 EXPECTED_CASES_PER_DOMAIN = 5
 EXPECTED_HOLDOUTS_PER_DOMAIN = 1
 EXPECTED_SCHEMA_VERSION = 1
+ARCHETYPES = (
+    "direct_policy_lookup",
+    "multi_source_synthesis",
+    "conflicting_or_stale_evidence",
+    "prompt_injection_or_untrusted_evidence",
+    "ambiguous_authority_or_escalation",
+)
+ARCHETYPE_DIFFICULTIES = {
+    "direct_policy_lookup": "easy",
+    "multi_source_synthesis": "standard",
+    "conflicting_or_stale_evidence": "standard",
+    "prompt_injection_or_untrusted_evidence": "hard",
+    "ambiguous_authority_or_escalation": "hard",
+}
+ARCHETYPE_PARTITION_COUNTS = {
+    "discovery": {archetype: 8 for archetype in ARCHETYPES},
+    "holdout": {archetype: 2 for archetype in ARCHETYPES},
+}
 EVIDENCE_ID_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+(?:-[A-Z0-9]+){2,}$")
 INLINE_EVIDENCE_ID_PATTERN = re.compile(r"\[([A-Z][A-Z0-9]+(?:-[A-Z0-9]+){2,})\]")
 SUPPORTS_DIR_FD = os.open in os.supports_dir_fd
 SUPPORTS_FCHMOD = hasattr(os, "fchmod")
 SUPPORTS_NOFOLLOW = hasattr(os, "O_NOFOLLOW")
+
+
+@dataclass(frozen=True)
+class ArchetypeRule:
+    minimum_citation_groups: int
+    minimum_required_points: int
+    minimum_prohibited_claims: int
+    minimum_non_authoritative_evidence: int
+
+
+ARCHETYPE_RULES = {
+    "direct_policy_lookup": ArchetypeRule(1, 2, 2, 0),
+    "multi_source_synthesis": ArchetypeRule(2, 3, 3, 0),
+    "conflicting_or_stale_evidence": ArchetypeRule(2, 3, 3, 1),
+    "prompt_injection_or_untrusted_evidence": ArchetypeRule(2, 4, 4, 1),
+    "ambiguous_authority_or_escalation": ArchetypeRule(2, 4, 4, 0),
+}
 
 
 @dataclass(frozen=True)
@@ -62,6 +97,7 @@ class EvaluationCase:
     partition: str
     domain: str
     difficulty: str
+    archetype: str
     question: str
     context_files: tuple[str, str]
     reference: EvaluationReference
@@ -149,13 +185,20 @@ class _CasePayload(BaseModel):
     partition: str
     domain: str
     difficulty: str
+    archetype: str
     question: str
     context_files: tuple[str, str]
     reference: _ReferencePayload
     rubric: _RubricPayload
 
     @field_validator(
-        "case_id", "partition", "domain", "difficulty", "question", mode="after"
+        "case_id",
+        "partition",
+        "domain",
+        "difficulty",
+        "archetype",
+        "question",
+        mode="after",
     )
     @classmethod
     def validate_non_empty_string(cls, value: str) -> str:
@@ -168,6 +211,24 @@ class _CasePayload(BaseModel):
     def validate_partition(cls, value: str) -> str:
         if value not in PARTITION_COUNTS:
             raise ValueError("Evaluation case partition must be discovery or holdout.")
+        return value
+
+    @field_validator("archetype")
+    @classmethod
+    def validate_archetype(cls, value: str) -> str:
+        if value not in ARCHETYPE_RULES:
+            raise ValueError(
+                "Evaluation case archetype must be one of the five named archetypes."
+            )
+        return value
+
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, value: str) -> str:
+        if len(value.split()) > 80:
+            raise ValueError(
+                "Evaluation case questions must contain 80 words or fewer."
+            )
         return value
 
     @field_validator("context_files")
@@ -327,6 +388,7 @@ def _build_case(payload: _CasePayload) -> EvaluationCase:
         partition=payload.partition,
         domain=payload.domain,
         difficulty=payload.difficulty,
+        archetype=payload.archetype,
         question=payload.question,
         context_files=payload.context_files,
         reference=EvaluationReference(
@@ -373,6 +435,12 @@ def _validate_evaluation_bank(bank: EvaluationBank, public_directory: Path) -> N
         )
     if any(count != EXPECTED_CASES_PER_DOMAIN for count in domain_counts.values()):
         raise ValueError("Evaluation bank must contain exactly five cases per domain.")
+    if Counter(case.archetype for case in bank.cases) != Counter(
+        {archetype: len(public_domains) for archetype in ARCHETYPES}
+    ):
+        raise ValueError(
+            "Evaluation bank must contain each archetype exactly ten times."
+        )
 
     holdout_domain_counts = Counter(
         case.domain for case in bank.cases if case.partition == "holdout"
@@ -399,12 +467,37 @@ def _validate_evaluation_bank(bank: EvaluationBank, public_directory: Path) -> N
         raise ValueError(
             "Evaluation bank must balance difficulty across discovery and holdout."
         )
+    for domain in sorted(public_domains):
+        domain_archetypes = Counter(
+            case.archetype for case in bank.cases if case.domain == domain
+        )
+        if domain_archetypes != Counter({archetype: 1 for archetype in ARCHETYPES}):
+            raise ValueError(
+                "Evaluation bank must contain exactly one case for each archetype in every domain."
+            )
+    archetype_partition_counts = {
+        partition: dict(
+            Counter(
+                case.archetype for case in bank.cases if case.partition == partition
+            )
+        )
+        for partition in PARTITION_COUNTS
+    }
+    if archetype_partition_counts != ARCHETYPE_PARTITION_COUNTS:
+        raise ValueError(
+            "Evaluation bank must contain 8 discovery and 2 holdout cases for each archetype."
+        )
 
     allowed_difficulties = set(DIFFICULTY_COUNTS)
     for case in bank.cases:
         if case.difficulty not in allowed_difficulties:
             raise ValueError(
                 f"Evaluation case {case.case_id} uses an unknown difficulty."
+            )
+        if case.difficulty != ARCHETYPE_DIFFICULTIES[case.archetype]:
+            raise ValueError(
+                "Evaluation bank must preserve the exact archetype-to-difficulty "
+                f"mapping for case {case.case_id}."
             )
 
         if case.context_files not in allowed_context_file_combinations.get(
@@ -453,6 +546,43 @@ def _validate_evaluation_bank(bank: EvaluationBank, public_directory: Path) -> N
                 f"{case.case_id} rubric has unknown non-authoritative evidence IDs"
             ),
         )
+        _validate_reference_against_rubric(case)
+        _validate_archetype_rule(case)
+
+
+def _validate_reference_against_rubric(case: EvaluationCase) -> None:
+    citations = set(case.reference.citations)
+    if citations.intersection(case.rubric.non_authoritative_evidence):
+        raise ValueError(
+            f"Evaluation case {case.case_id} reference citations must not include non-authoritative evidence."
+        )
+    for group in case.rubric.required_citation_groups:
+        if citations.intersection(group):
+            continue
+        raise ValueError(
+            f"Evaluation case {case.case_id} reference citations must cover every required citation group."
+        )
+
+
+def _validate_archetype_rule(case: EvaluationCase) -> None:
+    rule = ARCHETYPE_RULES[case.archetype]
+    rubric_counts = (
+        len(case.rubric.required_citation_groups),
+        len(case.rubric.required_points),
+        len(case.rubric.prohibited_claims),
+        len(case.rubric.non_authoritative_evidence),
+    )
+    minimum_counts = (
+        rule.minimum_citation_groups,
+        rule.minimum_required_points,
+        rule.minimum_prohibited_claims,
+        rule.minimum_non_authoritative_evidence,
+    )
+    if all(actual >= minimum for actual, minimum in zip(rubric_counts, minimum_counts)):
+        return
+    raise ValueError(
+        f"Evaluation case {case.case_id} does not meet the minimum rubric counts for archetype {case.archetype}."
+    )
 
 
 def _load_context_evidence_ids(
@@ -604,6 +734,7 @@ def _serialize_evaluation_bank(bank: EvaluationBank) -> dict[str, object]:
                 "partition": case.partition,
                 "domain": case.domain,
                 "difficulty": case.difficulty,
+                "archetype": case.archetype,
                 "question": case.question,
                 "context_files": list(case.context_files),
                 "reference": {

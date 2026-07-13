@@ -19,6 +19,7 @@ from pydantic import (
 from .dataset import EVIDENCE_ID_PATTERN
 from .evaluation_bank import PARTITION_COUNTS, EvaluationCase
 from .fireworks import (
+    Completion,
     FIREWORKS_MODEL,
     JUDGE_RESPONSE_FORMAT,
     JUDGE_TIERS,
@@ -32,6 +33,7 @@ from .playground import FIXED_SYSTEM_PROMPT
 
 DISCOVERY_WEIGHT = 0.75
 HOLDOUT_WEIGHT = 0.25
+MAX_RUN_TOKENS = 500_000
 JUDGE_WEIGHTS = {
     "answer_relevance": 0.20,
     "instruction_following": 0.15,
@@ -84,6 +86,7 @@ def score_prompt(
     candidate_model: str = FIREWORKS_MODEL,
     judge_model: str = JUDGE_MODEL,
     max_calls: int = 100,
+    max_run_tokens: int = MAX_RUN_TOKENS,
     on_case_start: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     prompt = participant_prompt.strip()
@@ -91,6 +94,8 @@ def score_prompt(
         raise ValueError("Participant prompt must not be empty.")
     if attempt < 1:
         raise ValueError("Attempt must be positive.")
+    if max_run_tokens < 1:
+        raise ValueError("Run token limit must be positive.")
     candidate_model, judge_model = validate_scoring_models(candidate_model, judge_model)
     if dict(Counter(case.partition for case in cases)) != PARTITION_COUNTS:
         raise ValueError("Scoring requires exactly 40 discovery and 10 holdout cases.")
@@ -102,6 +107,7 @@ def score_prompt(
 
     started_at = _timestamp()
     results: list[dict[str, Any]] = []
+    token_usage = _empty_token_usage()
     for current, case in enumerate(cases, start=1):
         if on_case_start is not None:
             on_case_start(current, len(cases))
@@ -112,6 +118,8 @@ def score_prompt(
                 public_directory=public_directory,
                 candidate_client=candidate_client,
                 judge_client=judge_client,
+                token_usage=token_usage,
+                max_run_tokens=max_run_tokens,
             )
         )
     discovery_results = [
@@ -145,6 +153,7 @@ def score_prompt(
         "discovery": discovery,
         "holdout": holdout,
         "overall_score": overall_score,
+        "token_usage": token_usage,
         "call_count": required_calls,
         "started_at": started_at,
         "completed_at": _timestamp(),
@@ -158,6 +167,8 @@ def _score_case(
     public_directory: Path,
     candidate_client: CompletionClient,
     judge_client: CompletionClient,
+    token_usage: dict[str, dict[str, int]],
+    max_run_tokens: int,
 ) -> dict[str, Any]:
     context, evidence_ids = _load_context(
         public_directory=public_directory,
@@ -171,6 +182,12 @@ def _score_case(
             participant_prompt=participant_prompt,
         ),
         max_tokens=256,
+    )
+    _record_token_usage(
+        token_usage=token_usage,
+        bucket="candidate",
+        completion=answer_completion,
+        max_run_tokens=max_run_tokens,
     )
     answer_completed_at = _timestamp()
     answer_payload = _parse_answer(answer_completion.content)
@@ -188,6 +205,12 @@ def _score_case(
         ),
         max_tokens=1024,
         response_format=JUDGE_RESPONSE_FORMAT,
+    )
+    _record_token_usage(
+        token_usage=token_usage,
+        bucket="judge",
+        completion=judge_completion,
+        max_run_tokens=max_run_tokens,
     )
     judge_completed_at = _timestamp()
     judge = _parse_judge(judge_completion.content)
@@ -367,6 +390,40 @@ def _parse_judge(response: str) -> _JudgePayload:
         return _JudgePayload.model_validate(payload)
     except (json.JSONDecodeError, ValidationError) as exc:
         raise ValueError("Judge response did not match the scoring contract.") from exc
+
+
+def _empty_token_usage() -> dict[str, dict[str, int]]:
+    return {
+        bucket: {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        for bucket in ("candidate", "judge", "total")
+    }
+
+
+def _record_token_usage(
+    *,
+    token_usage: dict[str, dict[str, int]],
+    bucket: str,
+    completion: Completion,
+    max_run_tokens: int,
+) -> None:
+    bucket_usage = token_usage[bucket]
+    total_usage = token_usage["total"]
+    bucket_usage["prompt_tokens"] += completion.prompt_tokens
+    bucket_usage["completion_tokens"] += completion.completion_tokens
+    bucket_usage["total_tokens"] += (
+        completion.prompt_tokens + completion.completion_tokens
+    )
+    total_usage["prompt_tokens"] += completion.prompt_tokens
+    total_usage["completion_tokens"] += completion.completion_tokens
+    total_usage["total_tokens"] += (
+        completion.prompt_tokens + completion.completion_tokens
+    )
+    if total_usage["total_tokens"] > max_run_tokens:
+        raise ValueError(f"Scoring exceeded the {max_run_tokens} token limit.")
 
 
 def _aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:

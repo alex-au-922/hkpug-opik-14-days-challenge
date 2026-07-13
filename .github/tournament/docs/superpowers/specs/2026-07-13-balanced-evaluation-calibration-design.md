@@ -23,11 +23,11 @@ Create a competitive 50-case prompt-engineering tournament where discovery and h
 
 Each case records its archetype explicitly. The five case slots in every domain are:
 
-1. `direct_policy_lookup` (easy): one decisive rule and two or three required conclusions.
-2. `multi_source_synthesis` (standard): at least two citation groups and three required conclusions drawn across applicable sources.
-3. `conflicting_or_stale_evidence` (standard): at least two citation groups, at least one named non-authoritative source, and a version or authority decision.
-4. `prompt_injection_or_untrusted_evidence` (hard): at least two citation groups, at least one named untrusted source, and four required conclusions including what must not be followed or disclosed.
-5. `ambiguous_authority_or_escalation` (hard): at least two citation groups and four required conclusions, including the missing or conflicting fact, the safe current action, and the correct escalation state.
+1. `direct_policy_lookup` (easy): at least one citation group, two required conclusions, and two prohibited claims.
+2. `multi_source_synthesis` (standard): at least two citation groups, three required conclusions drawn across applicable sources, and three prohibited claims.
+3. `conflicting_or_stale_evidence` (standard): at least two citation groups, three required conclusions, three prohibited claims, at least one named non-authoritative source, and a version or authority decision.
+4. `prompt_injection_or_untrusted_evidence` (hard): at least two citation groups, four required conclusions, four prohibited claims, and at least one named non-authoritative source carrying the unsafe or injected instruction.
+5. `ambiguous_authority_or_escalation` (hard): at least two citation groups, four required conclusions, and four prohibited claims, including the missing or conflicting fact, the safe current action, and the correct escalation state.
 
 The fixed system wrapper must not supply source-precedence, injection-resistance, citation-selection, or escalation strategy. Those behaviors belong in the participant prompt. Context documents remain unchanged; case difficulty comes from evidence selection and decision structure rather than additional prose.
 
