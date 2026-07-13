@@ -221,12 +221,14 @@ jobs:
         env:
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
           FIREWORKS_MODEL: ${{ vars.FIREWORKS_MODEL }}
+          JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}
           MAX_FIREWORKS_CALLS_PER_RUN: ${{ vars.MAX_FIREWORKS_CALLS_PER_RUN }}
           DISCOVERY_FEEDBACK_MODE: full_trace
           HOLDOUT_FEEDBACK_MODE: aggregate_only
         run: |
           set -euo pipefail
           test "$FIREWORKS_MODEL" = "accounts/fireworks/models/deepseek-v4-flash"
+          test "$JUDGE_MODEL" = "accounts/fireworks/models/qwen3p7-plus"
           test "$DISCOVERY_FEEDBACK_MODE" = full_trace
           test "$HOLDOUT_FEEDBACK_MODE" = aggregate_only
           openssl cms -decrypt -binary -inform DER \
