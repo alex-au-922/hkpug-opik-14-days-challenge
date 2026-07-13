@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Validate organizer ref
         env:
-          ORGANIZER_REF: ${{ vars.ORGANIZER_REF }}
+          ORGANIZER_REF: dcbe00c824b518f9be245a2c1e6eb73b0c357ef1
         run: |
           set -euo pipefail
           [[ "$ORGANIZER_REF" =~ ^[0-9a-f]{40}$ ]]
@@ -31,7 +31,7 @@ jobs:
       - name: Check out trusted base code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ vars.ORGANIZER_REF }}
+          ref: dcbe00c824b518f9be245a2c1e6eb73b0c357ef1
           path: trusted
           persist-credentials: false
 
