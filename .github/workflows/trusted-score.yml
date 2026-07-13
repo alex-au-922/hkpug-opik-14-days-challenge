@@ -73,7 +73,7 @@ jobs:
 
       - name: Validate organizer ref
         env:
-          ORGANIZER_REF: e986388a2026432d47774092e19118aba7263f11
+          ORGANIZER_REF: 6e8c61389e7854def5a5cc212038b43c2415cef0
         run: |
           set -euo pipefail
           [[ "$ORGANIZER_REF" =~ ^[0-9a-f]{40}$ ]]
@@ -81,7 +81,7 @@ jobs:
       - name: Check out trusted scorer code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: e986388a2026432d47774092e19118aba7263f11
+          ref: 6e8c61389e7854def5a5cc212038b43c2415cef0
           path: trusted
           persist-credentials: false
 
