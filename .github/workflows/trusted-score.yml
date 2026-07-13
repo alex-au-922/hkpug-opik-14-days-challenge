@@ -16,7 +16,7 @@ concurrency:
 
 env:
   MAX_ATTEMPTS: ${{ vars.MAX_ATTEMPTS }}
-  MAX_DAILY_ATTEMPTS: 2
+  MAX_DAILY_ATTEMPTS: 4
   LEADERBOARD_BRANCH: ${{ vars.LEADERBOARD_BRANCH }}
   LEADERBOARD_DIR: ${{ github.workspace }}/leaderboard-site
 
@@ -173,7 +173,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$MAX_ATTEMPTS" == "8" ]]
-          [[ "$MAX_DAILY_ATTEMPTS" == "2" ]]
+          [[ "$MAX_DAILY_ATTEMPTS" == "4" ]]
           test "$HEAD_SHA" = "$VERIFIED_HEAD_SHA"
           install -d -m 700 /tmp/private
           if [[ -s "$LEADERBOARD_DIR/state/events.jsonl.cms" ]]; then
