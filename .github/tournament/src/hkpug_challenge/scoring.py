@@ -24,8 +24,8 @@ from .fireworks import (
     FIREWORKS_MODEL,
     JUDGE_TIERS,
     JUDGE_MODEL,
-    SCORING_JUDGE_RESPONSE_FORMAT,
     CompletionClient,
+    scoring_judge_response_format,
     validate_scoring_models,
 )
 from .models import Message
@@ -232,7 +232,11 @@ def _score_case(
             candidate_answer=answer_completion.content,
         ),
         max_tokens=1024,
-        response_format=SCORING_JUDGE_RESPONSE_FORMAT,
+        response_format=scoring_judge_response_format(
+            required_point_count=len(case.rubric.required_points),
+            prohibited_claim_count=len(case.rubric.prohibited_claims),
+            non_authoritative_evidence=case.rubric.non_authoritative_evidence,
+        ),
     )
     _record_token_usage(
         token_usage=token_usage,

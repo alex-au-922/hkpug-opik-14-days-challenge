@@ -20,7 +20,13 @@ Transport = Callable[[str, dict[str, str], JsonObject, float], JsonObject]
 RetryCallback = Callable[[int, int], None]
 
 
-def _judge_response_format(*, semantic_audit: bool) -> JsonObject:
+def _judge_response_format(
+    *,
+    semantic_audit: bool,
+    required_point_indexes: tuple[int, ...] = (),
+    prohibited_claim_indexes: tuple[int, ...] = (),
+    non_authoritative_evidence: tuple[str, ...] = (),
+) -> JsonObject:
     properties: JsonObject = {
         "answer_relevance": {"type": "integer", "enum": JUDGE_TIERS},
         "instruction_following": {"type": "integer", "enum": JUDGE_TIERS},
@@ -32,15 +38,15 @@ def _judge_response_format(*, semantic_audit: bool) -> JsonObject:
             {
                 "required_points_met": {
                     "type": "array",
-                    "items": {"type": "integer"},
+                    "items": _enum_items("integer", required_point_indexes),
                 },
                 "prohibited_claims_present": {
                     "type": "array",
-                    "items": {"type": "integer"},
+                    "items": _enum_items("integer", prohibited_claim_indexes),
                 },
                 "non_authoritative_evidence_used": {
                     "type": "array",
-                    "items": {"type": "string"},
+                    "items": _enum_items("string", non_authoritative_evidence),
                 },
             }
         )
@@ -80,8 +86,33 @@ def _judge_response_format(*, semantic_audit: bool) -> JsonObject:
     }
 
 
+def _enum_items(item_type: str, values: tuple[object, ...]) -> JsonObject:
+    items: JsonObject = {"type": item_type}
+    if values:
+        items["enum"] = values
+    return items
+
+
 JUDGE_RESPONSE_FORMAT = _judge_response_format(semantic_audit=False)
 SCORING_JUDGE_RESPONSE_FORMAT = _judge_response_format(semantic_audit=True)
+
+
+def scoring_judge_response_format(
+    *,
+    required_point_count: int,
+    prohibited_claim_count: int,
+    non_authoritative_evidence: tuple[str, ...],
+) -> JsonObject:
+    if required_point_count < 0 or prohibited_claim_count < 0:
+        raise ValueError("Judge audit counts must not be negative.")
+    if len(set(non_authoritative_evidence)) != len(non_authoritative_evidence):
+        raise ValueError("Judge audit evidence IDs must be unique.")
+    return _judge_response_format(
+        semantic_audit=True,
+        required_point_indexes=tuple(range(required_point_count)),
+        prohibited_claim_indexes=tuple(range(prohibited_claim_count)),
+        non_authoritative_evidence=non_authoritative_evidence,
+    )
 
 
 @dataclass(frozen=True)

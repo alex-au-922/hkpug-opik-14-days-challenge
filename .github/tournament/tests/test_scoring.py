@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -16,6 +17,7 @@ from hkpug_challenge.fireworks import (
     FIREWORKS_MODEL,
     JUDGE_RESPONSE_FORMAT,
     SCORING_JUDGE_RESPONSE_FORMAT,
+    scoring_judge_response_format,
 )
 from hkpug_challenge.models import Message
 from hkpug_challenge.playground import FIXED_SYSTEM_PROMPT
@@ -152,9 +154,24 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
     assert len(answer_client.calls) == 50
     assert len(judge_client.calls) == 50
     assert all(call[1:] == (256, None) for call in answer_client.calls)
-    assert all(
-        call[1:] == (1024, SCORING_JUDGE_RESPONSE_FORMAT) for call in judge_client.calls
+    expected_judge_format = scoring_judge_response_format(
+        required_point_count=2,
+        prohibited_claim_count=1,
+        non_authoritative_evidence=("HB-GOV-001",),
     )
+    assert all(call[1:] == (1024, expected_judge_format) for call in judge_client.calls)
+    json_schema = cast(dict[str, object], expected_judge_format["json_schema"])
+    schema = cast(dict[str, object], json_schema["schema"])
+    scoring_properties = cast(dict[str, object], schema["properties"])
+
+    def audit_enum(name: str) -> object:
+        field = cast(dict[str, object], scoring_properties[name])
+        items = cast(dict[str, object], field["items"])
+        return items["enum"]
+
+    assert audit_enum("required_points_met") == (0, 1)
+    assert audit_enum("prohibited_claims_present") == (0,)
+    assert audit_enum("non_authoritative_evidence_used") == ("HB-GOV-001",)
     for audit_field in (
         "required_points_met",
         "prohibited_claims_present",
