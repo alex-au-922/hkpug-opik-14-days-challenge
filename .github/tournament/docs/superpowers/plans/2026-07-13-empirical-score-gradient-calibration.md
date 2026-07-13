@@ -4,7 +4,7 @@
 
 **Goal:** Recalibrate all 50 private tournament cases with real DeepSeek V4 Flash outputs so cumulative prompt rules produce a measurable score gradient while every run remains below 500,000 tokens.
 
-**Architecture:** Add a private calibration runner that executes a fixed four-profile prompt ladder through the production `score_prompt()` path and summarizes results by partition, archetype, criterion, and case. Tighten the Qwen judge contract so required conclusions and prohibited claims produce auditable semantic caps, then use each real calibration report to rewrite the failing private cases and repeat until all score-gradient gates pass.
+**Architecture:** Add a private calibration runner that executes a fixed four-profile prompt ladder through the production `score_prompt()` path and summarizes results by partition, archetype, criterion, and case. Tighten the Qwen judge contract so required conclusions and prohibited claims produce auditable semantic caps, remove participant-strategy instructions from the common handbook, then use each real calibration report to rewrite the failing private cases and repeat until all score-gradient gates pass.
 
 **Tech Stack:** Python 3.10+, Pydantic 2, pytest, uv, Ruff, Pyright, Fireworks DeepSeek V4 Flash candidate, Fireworks Qwen3.7 Plus judge, encrypted CMS evaluation bank.
 
@@ -14,11 +14,12 @@
 - Candidate model is exactly `accounts/fireworks/models/deepseek-v4-flash`.
 - Judge model is exactly `accounts/fireworks/models/qwen3p7-plus`.
 - Candidate plus judge prompt and completion usage must not exceed 500,000 tokens per profile; the calibration target is at most 425,000 tokens.
-- Public context documents remain byte-for-byte unchanged.
+- Domain policy evidence remains factually stable. The common handbook may be rewritten once to remove authority, citation, injection, escalation, and output-contract instructions that duplicate the participant prompt; after that rewrite, public contexts are frozen for every calibration round.
 - Private case questions, references, rubrics, outputs, and reports remain untracked and must never be exposed in participant-facing branches or artifacts.
 - Discovery and holdout retain the exact 8:2 archetype ratio and the same difficulty distribution.
 - The four participant profiles are cumulative: output contract; evidence authority; conflict/stale/injection resistance; uncertainty and escalation.
 - Calibration passes only when the final profile beats the output-contract baseline by at least 10 overall points, evidence authority improves the targeted evidence/faithfulness contribution by at least 2 points, conflict resistance improves the conflicting/untrusted archetype average by at least 4 points, escalation rules improve the ambiguous/escalation archetype average by at least 4 points, final escalation contribution for that archetype is at least 9/10, the final discovery/holdout gap is at most 10 points, and no profile exceeds the token limits.
+- Questions must not name their archetype or explicitly tell the model which authority, trust-boundary, or escalation strategy to apply. Escalation labels must not be predictable from case position or archetype.
 
 ---
 
@@ -31,12 +32,13 @@
 
 **Interfaces:**
 - Consumes: `EvaluationCase.rubric.required_points`, `prohibited_claims`, and `non_authoritative_evidence`.
-- Produces: judge JSON containing zero-based `required_points_met`, `prohibited_claims_present`, and `non_authoritative_evidence_used`; `_score_case()` applies deterministic tier caps before criterion weights.
+- Produces: judge JSON containing zero-based `required_points_met`, `prohibited_claims_present`, and `non_authoritative_evidence_used`; `_score_case()` applies deterministic tier caps before criterion weights; `score_prompt(include_holdout_details=False)` exposes holdout case rows only when the private calibration runner explicitly opts in.
 
 - [ ] Write failing tests proving a judge cannot award 100 relevance when a material required point is missing and cannot award 100 faithfulness when a prohibited claim or non-authoritative source is used as authority.
 - [ ] Run `uv run pytest tests/test_scoring.py -q` and verify the new tests fail because semantic audit fields and caps do not exist.
-- [ ] Extend `JUDGE_RESPONSE_FORMAT` and `_JudgePayload` with validated semantic audit fields; reject indexes outside each case rubric and evidence IDs outside `non_authoritative_evidence`.
+- [ ] Add a scoring-specific `SCORING_JUDGE_RESPONSE_FORMAT` and extend `_JudgePayload` with validated semantic audit fields; retain the legacy playground response schema, and reject indexes outside each case rubric and evidence IDs outside `non_authoritative_evidence`.
 - [ ] Cap `answer_relevance` by required-point coverage tiers and cap `faithfulness` at 50 when a prohibited claim or non-authoritative authority is present.
+- [ ] Add a default-off `include_holdout_details` switch and prove participant scoring still hides holdout rows while private calibration receives all ten.
 - [ ] Run `uv run pytest tests/test_scoring.py -q`, `uv run ruff format --check src tests`, and `uv run pyright`; expect all checks to pass.
 
 ### Task 2: Private four-profile calibration runner
@@ -45,10 +47,10 @@
 - Create: `.github/tournament/src/hkpug_challenge/calibration.py`
 - Create: `.github/tournament/scripts/run_calibration.py`
 - Create: `.github/tournament/tests/test_calibration.py`
-- Create locally and keep ignored: `.github/tournament/.local/calibration/prompts/*.txt`
+- Create locally and keep ignored: `.local/calibration/prompts/*.txt`
 
 **Interfaces:**
-- Consumes: `score_prompt()`, an already-decrypted private `EvaluationBank`, a directory containing exactly four cumulative prompt files, and Fireworks clients.
+- Consumes: `score_prompt(include_holdout_details=True)`, an already-decrypted private `EvaluationBank`, a directory containing exactly four cumulative prompt files, and Fireworks clients.
 - Produces: mode-0600 private JSON containing each profile prompt hash, aggregate score, partition aggregates, per-archetype criteria, per-case deltas, token usage, and named gate results.
 
 - [ ] Write failing public-interface tests for profile ordering, cumulative-rule validation, archetype aggregation, score deltas, token gates, and mode-0600 output.
@@ -61,9 +63,9 @@
 ### Task 3: First real-model diagnostic pass
 
 **Files:**
-- Read: `.github/tournament/.local/evaluation/evaluation_bank.json`
-- Create locally and keep ignored: `.github/tournament/.local/calibration/round-01.json`
-- Create locally and keep ignored: `.github/tournament/.local/calibration/round-01-review.md`
+- Read: `.local/evaluation/evaluation_bank.json`
+- Create locally and keep ignored: `.local/calibration/round-01.json`
+- Create locally and keep ignored: `.local/calibration/round-01-review.md`
 
 **Interfaces:**
 - Consumes: authenticated Fireworks access and the four-profile runner.
@@ -78,8 +80,9 @@
 ### Task 4: Evidence-driven 50-case rewrite
 
 **Files:**
-- Modify locally and keep ignored: `.github/tournament/.local/evaluation/domains/*.json`
-- Regenerate locally and keep ignored: `.github/tournament/.local/evaluation/evaluation_bank.json`
+- Modify once, then freeze: `public/contexts/company_handbook.md`
+- Modify locally and keep ignored: `.local/evaluation/domains/*.json`
+- Regenerate locally and keep ignored: `.local/evaluation/evaluation_bank.json`
 - Modify tracked encrypted artifact: `.github/tournament/evaluation_bank.json.cms`
 - Modify tests only when the validated bank contract changes: `.github/tournament/tests/test_evaluation_bank.py`
 
@@ -88,16 +91,18 @@
 - Produces: 50 cases in which each intended rule changes an observable answer decision: source selection, citation coverage, conflict handling, injection rejection, or escalation.
 
 - [ ] Split the ten domain files into disjoint rewrite batches and give each worker the relevant private report rows and profile outputs.
+- [ ] Replace the common handbook's participant-strategy instructions with neutral shared facts and routing vocabulary; remove its strategy IDs from private references and rubrics.
 - [ ] For each case, preserve domain/archetype/partition while making the missing rule necessary to reach the reference answer; do not add answer-key language to the question.
 - [ ] Make every required point atomic and observable, every prohibited claim plausible under a weaker rule, and every non-authoritative evidence ID correspond to an actual tempting distractor in the unchanged contexts.
+- [ ] Balance true/false escalation decisions within each archetype and remove cue phrases such as `safe action and escalation decision`, overt `archived/stale evidence` labels, and question narration that announces an injection.
 - [ ] Rebuild the canonical bank and run all bank validators, semantic-duplicate checks, and public-context byte comparison.
 - [ ] Encrypt the canonical bank and verify a CMS decrypt round trip is byte-for-byte identical.
 
 ### Task 5: Repeat until gradient gates pass
 
 **Files:**
-- Create locally and keep ignored: `.github/tournament/.local/calibration/round-NN.json`
-- Create locally and keep ignored: `.github/tournament/.local/calibration/round-NN-review.md`
+- Create locally and keep ignored: `.local/calibration/round-NN.json`
+- Create locally and keep ignored: `.local/calibration/round-NN-review.md`
 - Modify local domain files and tracked encrypted bank as required by each failed round.
 
 **Interfaces:**
@@ -115,6 +120,7 @@
 - Modify: `.github/tournament/docs/superpowers/specs/2026-07-13-balanced-evaluation-calibration-design.md`
 - Modify: `.github/tournament/docs/superpowers/plans/2026-07-13-discriminative-evaluation-bank.md`
 - Modify tracked encrypted bank and scorer files produced by Tasks 1-5.
+- Synchronize changed participant-visible contexts to the participant `main` branch after the organizer commit is accepted.
 
 **Interfaces:**
 - Consumes: accepted private calibration report.
