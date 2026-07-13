@@ -12,38 +12,38 @@
       "holdout": 0.25
     }
   },
-  "generated_at": "2026-07-13T01:46:52.225000Z",
+  "generated_at": "2026-07-13T01:58:20.015000Z",
   "schema_version": 1,
   "teams": [
     {
-      "attempts_remaining": 7,
-      "attempts_used": 1,
+      "attempts_remaining": 6,
+      "attempts_used": 2,
       "best": {
-        "attempt": 1,
-        "completed_at": "2026-07-13T01:46:52.225000Z",
+        "attempt": 2,
+        "completed_at": "2026-07-13T01:58:20.015000Z",
         "criteria": {
-          "answer_relevance": 19.06,
-          "deterministic": 37.54,
-          "faithfulness": 22.15,
+          "answer_relevance": 19.54,
+          "deterministic": 37.95,
+          "faithfulness": 22.0,
           "instruction_following": 14.23
         },
-        "discovery_score": 92.58,
-        "holdout_score": 94.17,
-        "overall_score": 92.98
+        "discovery_score": 94.72,
+        "holdout_score": 90.67,
+        "overall_score": 93.71
       },
       "display_name": "Organizer Test Team",
       "latest": {
-        "attempt": 1,
-        "completed_at": "2026-07-13T01:46:52.225000Z",
+        "attempt": 2,
+        "completed_at": "2026-07-13T01:58:20.015000Z",
         "criteria": {
-          "answer_relevance": 19.06,
-          "deterministic": 37.54,
-          "faithfulness": 22.15,
+          "answer_relevance": 19.54,
+          "deterministic": 37.95,
+          "faithfulness": 22.0,
           "instruction_following": 14.23
         },
-        "discovery_score": 92.58,
-        "holdout_score": 94.17,
-        "overall_score": 92.98
+        "discovery_score": 94.72,
+        "holdout_score": 90.67,
+        "overall_score": 93.71
       },
       "rank": 1,
       "runs": [
@@ -59,6 +59,19 @@
           "discovery_score": 92.58,
           "holdout_score": 94.17,
           "overall_score": 92.98
+        },
+        {
+          "attempt": 2,
+          "completed_at": "2026-07-13T01:58:20.015000Z",
+          "criteria": {
+            "answer_relevance": 19.54,
+            "deterministic": 37.95,
+            "faithfulness": 22.0,
+            "instruction_following": 14.23
+          },
+          "discovery_score": 94.72,
+          "holdout_score": 90.67,
+          "overall_score": 93.71
         }
       ],
       "team_id": "organizer-test"
