@@ -2,7 +2,7 @@
   "challenge": {
     "ends_at": "2026-07-25T23:59:59+08:00",
     "max_attempts": 8,
-    "max_daily_attempts": 4,
+    "max_daily_attempts": 8,
     "name": "HKPUG Opik 14-Day Challenge",
     "starts_at": "2026-07-12T00:00:00+08:00",
     "status": "live",
@@ -12,12 +12,12 @@
       "holdout": 0.25
     }
   },
-  "generated_at": "2026-07-13T16:48:47.786000Z",
+  "generated_at": "2026-07-13T17:27:36.095000Z",
   "schema_version": 1,
   "teams": [
     {
-      "attempts_remaining": 4,
-      "attempts_used": 4,
+      "attempts_remaining": 3,
+      "attempts_used": 5,
       "best": {
         "attempt": 2,
         "completed_at": "2026-07-13T16:35:53.422000Z",
@@ -33,17 +33,17 @@
       },
       "display_name": "Organizer Test Team",
       "latest": {
-        "attempt": 4,
-        "completed_at": "2026-07-13T16:48:47.786000Z",
+        "attempt": 5,
+        "completed_at": "2026-07-13T17:27:36.095000Z",
         "criteria": {
-          "answer_relevance": 17.06,
-          "deterministic": 35.56,
-          "faithfulness": 22.38,
-          "instruction_following": 13.43
+          "answer_relevance": 17.12,
+          "deterministic": 36.24,
+          "faithfulness": 22.04,
+          "instruction_following": 13.57
         },
-        "discovery_score": 88.6,
+        "discovery_score": 89.32,
         "holdout_score": 87.92,
-        "overall_score": 88.43
+        "overall_score": 88.97
       },
       "rank": 1,
       "runs": [
@@ -98,6 +98,19 @@
           "discovery_score": 88.6,
           "holdout_score": 87.92,
           "overall_score": 88.43
+        },
+        {
+          "attempt": 5,
+          "completed_at": "2026-07-13T17:27:36.095000Z",
+          "criteria": {
+            "answer_relevance": 17.12,
+            "deterministic": 36.24,
+            "faithfulness": 22.04,
+            "instruction_following": 13.57
+          },
+          "discovery_score": 89.32,
+          "holdout_score": 87.92,
+          "overall_score": 88.97
         }
       ],
       "team_id": "organizer-test"
