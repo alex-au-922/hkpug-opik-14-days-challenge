@@ -8,7 +8,11 @@ from pathlib import Path
 
 from hkpug_challenge.calibration import run_calibration, validate_calibration_paths
 from hkpug_challenge.evaluation_bank import load_evaluation_bank
-from hkpug_challenge.fireworks import FireworksClient, validate_scoring_models
+from hkpug_challenge.fireworks import (
+    FIREWORKS_MODEL,
+    FireworksClient,
+    validate_scoring_models,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,6 +57,7 @@ def main() -> int:
             candidate_client=FireworksClient(
                 api_key,
                 model=candidate_model,
+                empty_on_missing_content=True,
                 on_retry=_log_retry,
             ),
             judge_client=FireworksClient(
@@ -62,6 +67,7 @@ def main() -> int:
             ),
             candidate_model=candidate_model,
             judge_model=judge_model,
+            allow_experimental_candidate=candidate_model != FIREWORKS_MODEL,
             on_progress=_log_progress,
         )
     except (OSError, RuntimeError, ValueError) as exc:
@@ -85,6 +91,7 @@ def _scoring_models() -> tuple[str, str]:
     return validate_scoring_models(
         os.environ.get("FIREWORKS_MODEL", ""),
         os.environ.get("JUDGE_MODEL", ""),
+        allow_experimental_candidate=True,
     )
 
 

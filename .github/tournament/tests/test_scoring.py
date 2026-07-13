@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -14,6 +15,7 @@ from hkpug_challenge.evaluation_bank import (
 )
 from hkpug_challenge.fireworks import (
     Completion,
+    EXPERIMENTAL_CANDIDATE_MAX_TOKENS,
     FIREWORKS_MODEL,
     JUDGE_RESPONSE_FORMAT,
     SCORING_JUDGE_RESPONSE_FORMAT,
@@ -21,7 +23,7 @@ from hkpug_challenge.fireworks import (
 )
 from hkpug_challenge.models import Message
 from hkpug_challenge.playground import FIXED_SYSTEM_PROMPT
-from hkpug_challenge.scoring import MAX_RUN_TOKENS, score_prompt
+from hkpug_challenge.scoring import JUDGE_MAX_TOKENS, MAX_RUN_TOKENS, score_prompt
 from hkpug_challenge.traces import build_trace_bundle
 
 
@@ -51,7 +53,7 @@ def write_contexts(root: Path) -> Path:
     public = root / "public"
     contexts = public / "contexts"
     contexts.mkdir(parents=True)
-    (contexts / "handbook.md").write_text(
+    (contexts / "company_handbook.md").write_text(
         "# Handbook\n\n## [HB-GOV-001]\nUse active policy.\n",
         encoding="utf-8",
     )
@@ -74,7 +76,7 @@ def make_case(case_id: str, partition: str) -> EvaluationCase:
         difficulty="standard",
         archetype="multi_source_synthesis",
         question=f"What is the approved outcome for {case_id}?",
-        context_files=("contexts/handbook.md", "contexts/domain.md"),
+        context_files=("contexts/company_handbook.md", "contexts/domain.md"),
         reference=EvaluationReference(
             answer="The approved outcome is Alpha.",
             citations=("DOM-POL-001", "DOM-POL-002"),
@@ -159,7 +161,10 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
         prohibited_claim_count=1,
         non_authoritative_evidence=("HB-GOV-001",),
     )
-    assert all(call[1:] == (1024, expected_judge_format) for call in judge_client.calls)
+    assert all(
+        call[1:] == (JUDGE_MAX_TOKENS, expected_judge_format)
+        for call in judge_client.calls
+    )
     json_schema = cast(dict[str, object], expected_judge_format["json_schema"])
     schema = cast(dict[str, object], json_schema["schema"])
     scoring_properties = cast(dict[str, object], schema["properties"])
@@ -181,7 +186,7 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
         assert audit_field in json.dumps(SCORING_JUDGE_RESPONSE_FORMAT)
     scoring_schema = json.dumps(SCORING_JUDGE_RESPONSE_FORMAT)
     assert '"minimum"' not in scoring_schema
-    assert '"uniqueItems"' not in scoring_schema
+    assert '"uniqueItems": true' in scoring_schema
     assert result["model"] == FIREWORKS_MODEL
     assert result["judge_model"] == JUDGE_MODEL
     assert result["overall_score"] == 88.75
@@ -207,6 +212,7 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
         },
     }
     assert result["call_count"] == 100
+
     assert result["discovery"]["cases"][0]["judge"] == {
         "raw_tiers": {
             "answer_relevance": 75,
@@ -233,6 +239,44 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
     assert "rubric" not in serialized
     assert "participant_prompt" in answer_client.calls[0][0][-1]["content"]
     assert "participant_prompt" not in judge_client.calls[0][0][-1]["content"]
+    assert "supplied context" in judge_client.calls[0][0][0]["content"]
+    judge_payload = json.loads(judge_client.calls[0][0][-1]["content"])
+    assert set(judge_payload) == {
+        "question",
+        "context",
+        "candidate_answer",
+        "reference",
+        "rubric",
+    }
+    assert "# Source file: contexts/company_handbook.md" not in judge_payload["context"]
+    assert "# Source file: contexts/domain.md" in judge_payload["context"]
+
+
+def test_score_prompt_uses_longer_budget_for_experimental_candidate(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    answer_client = FakeCompletionClient([valid_answer()] * 50)
+    judge_client = FakeCompletionClient([judge_response()] * 50)
+    candidate_model = "accounts/fireworks/models/gpt-oss-20b"
+
+    score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-gpt-oss",
+        participant_prompt="Use evidence and return strict JSON.",
+        cases=make_cases(),
+        public_directory=public,
+        candidate_client=answer_client,
+        judge_client=judge_client,
+        candidate_model=candidate_model,
+        allow_experimental_candidate=True,
+    )
+
+    assert all(
+        call[1] == EXPERIMENTAL_CANDIDATE_MAX_TOKENS
+        for call in answer_client.calls
+    )
 
 
 def test_score_prompt_includes_all_holdout_details_when_requested(
@@ -259,6 +303,45 @@ def test_score_prompt_includes_all_holdout_details_when_requested(
     ]
     assert set(holdout_cases[0]) == set(result["discovery"]["cases"][0])
     assert all("partition" not in case for case in holdout_cases)
+
+
+def test_score_prompt_omits_unavailable_judge_audits(tmp_path: Path) -> None:
+    public = write_contexts(tmp_path)
+    cases = tuple(
+        replace(
+            case,
+            rubric=replace(case.rubric, non_authoritative_evidence=()),
+        )
+        for case in make_cases()
+    )
+    response = json.loads(judge_response())
+    del response["non_authoritative_evidence_used"]
+    judge_client = FakeCompletionClient([json.dumps(response)] * 50)
+
+    result = score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-no-authority-audit",
+        participant_prompt="Return JSON.",
+        cases=cases,
+        public_directory=public,
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=judge_client,
+    )
+
+    response_format = cast(dict[str, object], judge_client.calls[0][2])
+    json_schema = cast(dict[str, object], response_format["json_schema"])
+    schema = cast(dict[str, object], json_schema["schema"])
+    properties = cast(dict[str, object], schema["properties"])
+    required = cast(list[str], schema["required"])
+    assert "non_authoritative_evidence_used" not in properties
+    assert "non_authoritative_evidence_used" not in required
+    assert (
+        result["discovery"]["cases"][0]["judge"]["audit"][
+            "non_authoritative_evidence_used"
+        ]
+        == []
+    )
 
 
 def test_score_prompt_reports_case_progress_without_case_details(
@@ -465,6 +548,33 @@ def test_score_prompt_rejects_semantic_audit_values_outside_case_rubric(
             candidate_client=FakeCompletionClient([valid_answer()] * 50),
             judge_client=FakeCompletionClient([json.dumps(response)]),
         )
+
+
+def test_score_prompt_reports_redacted_judge_contract_shape(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    response = json.loads(judge_response())
+    response["reasoning"] = "PRIVATE JUDGE OUTPUT"
+
+    with pytest.raises(ValueError) as raised:
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-invalid-judge-shape",
+            participant_prompt="Return JSON.",
+            cases=make_cases(),
+            public_directory=public,
+            candidate_client=FakeCompletionClient([valid_answer()] * 50),
+            judge_client=FakeCompletionClient([json.dumps(response)]),
+        )
+
+    message = str(raised.value)
+    assert "validation_locations=reasoning" in message
+    assert "validation_types=extra_forbidden" in message
+    assert "response_chars=" in message
+    assert "response_sha256=" in message
+    assert "PRIVATE JUDGE OUTPUT" not in message
 
 
 def test_score_prompt_enforces_call_ceiling_before_model_calls(tmp_path: Path) -> None:

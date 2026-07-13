@@ -21,6 +21,8 @@ from .dataset import EVIDENCE_ID_PATTERN
 from .evaluation_bank import PARTITION_COUNTS, EvaluationCase
 from .fireworks import (
     Completion,
+    EXPERIMENTAL_CANDIDATE_MAX_TOKENS,
+    EXPERIMENTAL_CANDIDATE_MODELS,
     FIREWORKS_MODEL,
     JUDGE_TIERS,
     JUDGE_MODEL,
@@ -35,6 +37,7 @@ from .playground import FIXED_SYSTEM_PROMPT
 DISCOVERY_WEIGHT = 0.75
 HOLDOUT_WEIGHT = 0.25
 MAX_RUN_TOKENS = 500_000
+JUDGE_MAX_TOKENS = 1_536
 JUDGE_WEIGHTS = {
     "answer_relevance": 0.20,
     "instruction_following": 0.15,
@@ -46,6 +49,7 @@ DETERMINISTIC_CRITERIA = (
     "evidence_coverage",
     "escalation",
 )
+SHARED_CONTEXT_PATH = "contexts/company_handbook.md"
 
 
 class _JudgeReasons(BaseModel):
@@ -62,9 +66,9 @@ class _JudgePayload(BaseModel):
     answer_relevance: StrictInt
     instruction_following: StrictInt
     faithfulness: StrictInt
-    required_points_met: tuple[StrictInt, ...]
-    prohibited_claims_present: tuple[StrictInt, ...]
-    non_authoritative_evidence_used: tuple[StrictStr, ...]
+    required_points_met: tuple[StrictInt, ...] = ()
+    prohibited_claims_present: tuple[StrictInt, ...] = ()
+    non_authoritative_evidence_used: tuple[StrictStr, ...] = ()
     reasons: _JudgeReasons
 
     @field_validator(
@@ -111,6 +115,7 @@ def score_prompt(
     max_run_tokens: int = MAX_RUN_TOKENS,
     include_holdout_details: bool = False,
     on_case_start: Callable[[int, int], None] | None = None,
+    allow_experimental_candidate: bool = False,
 ) -> dict[str, Any]:
     prompt = participant_prompt.strip()
     if not prompt:
@@ -119,7 +124,11 @@ def score_prompt(
         raise ValueError("Attempt must be positive.")
     if max_run_tokens < 1:
         raise ValueError("Run token limit must be positive.")
-    candidate_model, judge_model = validate_scoring_models(candidate_model, judge_model)
+    candidate_model, judge_model = validate_scoring_models(
+        candidate_model,
+        judge_model,
+        allow_experimental_candidate=allow_experimental_candidate,
+    )
     if dict(Counter(case.partition for case in cases)) != PARTITION_COUNTS:
         raise ValueError("Scoring requires exactly 40 discovery and 10 holdout cases.")
     required_calls = len(cases) * 2
@@ -141,6 +150,7 @@ def score_prompt(
                 public_directory=public_directory,
                 candidate_client=candidate_client,
                 judge_client=judge_client,
+                candidate_model=candidate_model,
                 token_usage=token_usage,
                 max_run_tokens=max_run_tokens,
             )
@@ -195,10 +205,11 @@ def _score_case(
     public_directory: Path,
     candidate_client: CompletionClient,
     judge_client: CompletionClient,
+    candidate_model: str,
     token_usage: dict[str, dict[str, int]],
     max_run_tokens: int,
 ) -> dict[str, Any]:
-    context, evidence_ids = _load_context(
+    context, evidence_ids, judge_context = _load_context(
         public_directory=public_directory,
         context_files=case.context_files,
     )
@@ -209,7 +220,11 @@ def _score_case(
             context=context,
             participant_prompt=participant_prompt,
         ),
-        max_tokens=256,
+        max_tokens=(
+            EXPERIMENTAL_CANDIDATE_MAX_TOKENS
+            if candidate_model in EXPERIMENTAL_CANDIDATE_MODELS
+            else 256
+        ),
     )
     _record_token_usage(
         token_usage=token_usage,
@@ -228,10 +243,10 @@ def _score_case(
     judge_completion = judge_client.complete(
         _judge_messages(
             case=case,
-            context=context,
+            context=judge_context,
             candidate_answer=answer_completion.content,
         ),
-        max_tokens=1024,
+        max_tokens=JUDGE_MAX_TOKENS,
         response_format=scoring_judge_response_format(
             required_point_count=len(case.rubric.required_points),
             prohibited_claim_count=len(case.rubric.prohibited_claims),
@@ -303,9 +318,10 @@ def _score_case(
 
 def _load_context(
     *, public_directory: Path, context_files: tuple[str, str]
-) -> tuple[str, frozenset[str]]:
+) -> tuple[str, frozenset[str], str]:
     public_root = public_directory.resolve()
     parts: list[str] = []
+    judge_parts: list[str] = []
     for relative_path in context_files:
         path = (public_root / relative_path).resolve()
         if not path.is_relative_to(public_root):
@@ -316,12 +332,17 @@ def _load_context(
             raise ValueError(f"Evaluation context not found: {relative_path}") from exc
         if not content:
             raise ValueError(f"Evaluation context is empty: {relative_path}")
-        parts.append(f"# Source file: {relative_path}\n\n{content}")
+        part = f"# Source file: {relative_path}\n\n{content}"
+        parts.append(part)
+        if relative_path != SHARED_CONTEXT_PATH:
+            judge_parts.append(part)
     context = "\n\n---\n\n".join(parts)
     evidence_ids = frozenset(EVIDENCE_ID_PATTERN.findall(context))
     if not evidence_ids:
         raise ValueError("Evaluation context contains no evidence IDs.")
-    return context, evidence_ids
+    if not judge_parts:
+        raise ValueError("Evaluation context contains no domain evidence.")
+    return context, evidence_ids, "\n\n---\n\n".join(judge_parts)
 
 
 def _answer_messages(
@@ -369,22 +390,27 @@ def _judge_messages(
         {
             "role": "system",
             "content": (
-                "Score the candidate support answer against the supplied reference and "
-                "evidence. Assign exactly one tier (0, 25, 50, 75, or 100) to each of "
+                "Score the candidate support answer against the supplied context, "
+                "reference, and rubric. Use the context to verify factual claims; do "
+                "not penalize a supported detail merely because the reference omits "
+                "it. Assign exactly one tier (0, 25, 50, 75, or 100) to each of "
                 "answer_relevance, instruction_following, and faithfulness. Use 0 when "
                 "the criterion is unmet, 25 for major failures, 50 for material errors "
                 "or omissions, 75 for minor errors or omissions, and 100 when fully "
-                "met. Judge only answer quality here; JSON shape, citation validity, "
-                "evidence coverage, and escalation matching are scored separately. "
+                "met. Judge only substantive answer quality here. JSON shape, citation "
+                "validity, evidence coverage, and escalation matching are scored "
+                "separately and must not lower these tiers. "
                 "Audit required_points_met as zero-based indexes of every required "
                 "point materially satisfied by the candidate. Audit "
                 "prohibited_claims_present as zero-based indexes of every prohibited "
                 "claim present. Audit non_authoritative_evidence_used as IDs from the "
                 "rubric list that the candidate treats as authority, not sources it "
                 "merely identifies as non-authoritative. Use empty arrays when none "
-                "apply. Return one JSON object with the three tier scores, the three "
-                "audit arrays, and a reasons object containing one short reason for "
-                "each score."
+                "apply. Every audit array must contain unique, zero-based indexes or "
+                "IDs only; never repeat an item and never invent one outside the "
+                "supplied rubric. Return one JSON object with the three tier scores, every audit "
+                "field present in the response schema, and a reasons object containing "
+                "one short reason for each score."
             ),
         },
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -453,8 +479,25 @@ def _parse_judge(response: str, *, case: EvaluationCase) -> _JudgePayload:
     try:
         payload = cast(object, json.loads(response))
         judge = _JudgePayload.model_validate(payload)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        raise ValueError("Judge response did not match the scoring contract.") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "Judge response did not match the scoring contract "
+            f"(json_error={exc.msg}; line={exc.lineno}; column={exc.colno}; "
+            f"{_judge_response_diagnostic(response)})."
+        ) from exc
+    except ValidationError as exc:
+        locations = ",".join(
+            _validation_location(error.get("loc", ()))
+            for error in exc.errors()
+        )
+        error_types = ",".join(
+            str(error.get("type", "unknown")) for error in exc.errors()
+        )
+        raise ValueError(
+            "Judge response did not match the scoring contract "
+            f"(validation_locations={locations}; validation_types={error_types}; "
+            f"{_judge_response_diagnostic(response)})."
+        ) from exc
 
     required_point_count = len(case.rubric.required_points)
     prohibited_claim_count = len(case.rubric.prohibited_claims)
@@ -468,8 +511,28 @@ def _parse_judge(response: str, *, case: EvaluationCase) -> _JudgePayload:
         )
     )
     if audit_outside_rubric:
-        raise ValueError("Judge response did not match the scoring contract.")
+        raise ValueError(
+            "Judge response did not match the scoring contract "
+            f"(audit=out-of-rubric; {_judge_response_diagnostic(response)})."
+        )
     return judge
+
+
+def _validation_location(value: object) -> str:
+    if isinstance(value, tuple):
+        parts = value
+    elif isinstance(value, list):
+        parts = tuple(value)
+    else:
+        parts = (value,)
+    return ".".join(str(part) for part in parts) or "<root>"
+
+
+def _judge_response_diagnostic(response: str) -> str:
+    return (
+        f"response_chars={len(response)}; "
+        f"response_sha256={sha256(response.encode('utf-8')).hexdigest()}"
+    )
 
 
 def _capped_judge_scores(

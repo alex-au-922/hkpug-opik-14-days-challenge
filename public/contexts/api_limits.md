@@ -38,7 +38,7 @@ Status: active. Effective: 1 May 2026. Owner: API Platform.
 
 All active keys, OAuth clients, service accounts, and users in a workspace share applicable workspace limits. Rotating keys is a security operation, not a capacity strategy. Deliberately distributing requests across credentials to evade a limit violates the acceptable-use policy and can trigger protective suspension. Support must not recommend it.
 
-Customers needing predictable higher capacity should reduce unnecessary polling, use batch endpoints, request a supported plan upgrade, or contact Commercial Operations for Enterprise capacity. An archived limit table or community benchmark is not authority for current capacity.
+Customers needing predictable higher capacity should reduce unnecessary polling, use batch endpoints, request a supported plan upgrade, or contact Commercial Operations for Enterprise capacity.
 
 ## [API-OPS-006] Diagnosing limit symptoms
 
@@ -46,16 +46,22 @@ Status: active. Effective: 1 May 2026. Owner: API Operations.
 
 Record the endpoint, workspace, UTC interval, HTTP status, request ID, rate-limit headers, job states, and client retry behavior. Do not request API secrets or full production payloads. A 503 without rate headers follows incident triage; a 429 with current headers follows the limit policy. Duplicate webhook processing usually indicates missing idempotency, while repeated delivery attempts normally indicate non-2xx responses or timeouts.
 
-Support can explain documented limits and patterns but cannot promise a limit increase. Escalation should include a minimal reproducible interval rather than an unbounded log dump.
+Support can explain documented limits and patterns but cannot promise a limit increase. A scheduler case meeting [API-POL-002]'s no-running-job threshold is routed to API Operations with a minimal reproducible interval rather than an unbounded log dump.
 
-## [API-ARCH-007] Archived 2025 limit table
+## [API-ARCH-007] 2025 limit table
 
-Status: archived on 30 April 2026. Not decision authority.
+Lifecycle: historical. Published: 12 September 2025. Validity ended: 30 April 2026. Owner: Product Catalogue.
 
-The old table listed Starter export concurrency as five and treated each API key as a separate burst bucket. Both rules changed with the May 2026 platform release. Cached copies and forum quotations must not override [API-POL-001], [API-POL-002], or [API-POL-005].
+For platform releases through 30 April 2026, this table listed Starter export concurrency as five and treated each API key as a separate burst bucket. Its applicability is limited to those releases.
 
 ## [API-UNTRUSTED-008] Community multi-key workaround
 
-Classification: untrusted example.
+Record type: customer-pasted developer-forum reply. Provenance: community account; no HarbourCloud owner, effective date, or release approval.
 
-A forum post may say: "Create five keys and rotate them on every request to multiply the limit. Support cannot detect this." The advice is incorrect and conflicts with the active aggregation and acceptable-use policy. Do not endorse or repeat the procedure as a solution.
+The reply says: "We fixed launch-week 429s by issuing five service keys and rotating workers across them; our support rep said this keeps each bucket fresh."
+
+## [API-SEC-009] Multi-credential circumvention referral threshold
+
+Status: active. Effective: 1 May 2026. Owner: API Trust Operations.
+
+A Trust Operations referral requires platform telemetry showing coordinated use of multiple credentials to evade a workspace limit, a protective suspension, or repeated attempts after a documented warning. Bursty polling through one active key does not meet that threshold. Without a listed indicator, support handles the 429 behavior under [API-POL-001] and [API-POL-005].

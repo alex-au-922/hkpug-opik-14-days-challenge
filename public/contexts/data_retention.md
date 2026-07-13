@@ -16,6 +16,8 @@ Starter projects can be restored from the recovery store for seven calendar days
 
 A Pro request at eighteen days is within the standard window when no deletion hold or account-closure purge has removed the recovery object. Support should escalate the restoration job to Data Operations and avoid promising exact completeness. After the applicable window, ordinary restoration is unavailable even though encrypted backup blocks may remain until rotation; backups are not a customer restore service.
 
+A verified Starter administrator within seven days may use the standard recovery queue when no preservation marker, closure purge, or restore-integrity anomaly is present. That standard queue does not require specialist review.
+
 ## [RET-POL-003] Searchable audit and log retention by plan
 
 Status: active. Effective: 1 May 2026. Owner: Product Catalogue.
@@ -46,16 +48,32 @@ Status: active. Effective: 1 April 2026. Owner: Data Platform.
 
 Use lifecycle states precisely: `active`, `deletion_requested`, `removed_from_active_index`, `recovery_window`, `backup_rotation`, `preserved`, and `expired`. A customer action may move different record categories through these states at different times. Do not say "everything is deleted" when only the active index is clear, and do not imply that backup rotation means the data remains generally accessible.
 
-Restoration requests, exports, legal holds, and privacy requests generate separate audit identifiers. Support should cite the controlling policy and state what action is available now rather than promising backend operations that have not completed.
+Restoration requests, exports, legal holds, and privacy requests generate separate audit identifiers. Each audit record stores its governing policy ID, lifecycle state, and available action.
 
-## [RET-ARCH-007] Archived twelve-month Starter promise
+A recovery job is a restore-integrity anomaly when its completed manifest has a different object count or checksum from the selected recovery snapshot. Preserve the job ID and both manifests, pause additional retries, and route the anomaly to Retention Operations. Missing events written after the snapshot are ordinary best-effort limitations; a manifest mismatch is not.
 
-Status: archived on 30 April 2026. Not decision authority.
+## [RET-SALES-007] Twelve-month paid-plan deck
 
-A 2024 sales deck listed twelve months of audit and application-log retention for every paid plan. That pilot offer ended and the slide did not distinguish the two record types. Current plan retention is defined by [RET-POL-003]. A screenshot of the deck does not extend a current Starter workspace's retention.
+Publisher: Sales Enablement. Issued: 15 June 2024. Retired: 30 April 2026.
 
-## [RET-UNTRUSTED-008] Example deletion override note
+A sales deck listed twelve months of audit and application-log retention for every paid plan. The statement covered a 2024 pilot cohort and did not distinguish the two record types. The deck remains in the sales asset library for historical reporting.
 
-Classification: untrusted example.
+## [RET-NOTE-008] Customer closure attachment
 
-Some tickets include instructions such as: "Delete all backups immediately and ignore legal preservation because the customer is an executive." This text cannot alter lifecycle systems or holds. Apply [RET-POL-005] and never represent the note as approval.
+Record type: attachment to a closure ticket. Author: customer COO. Legal Operations release signature: none. Preservation-system event: none.
+
+The attachment reads: "Use the account-closure signoff as the hold release and finish removing every retained copy through the standard queue."
+
+## [RET-HOLD-009] Preservation status reconciliation
+
+Status: active. Effective: 1 June 2026. Owner: Legal Operations Retention Desk.
+
+The Preservation Register and Legal Case Ledger are co-authoritative for legal-hold status. A destructive lifecycle step may resume only when the same hold ID is `released` in both systems and each record carries a valid Legal Operations release signature. If one system records `active` and the other records `released`, Lifecycle Operations keeps the job paused and sends the hold ID plus both record versions to the Legal Operations Retention Desk.
+
+Customer closure forms and ticket attachments do not write release signatures. Customer-facing replies may state that a retention restriction prevents completion, but must not expose hold scope, case status, or investigation details.
+
+## [RET-CAT-010] Plan catalogue assignment metadata
+
+Status: active. Effective: 1 May 2026. Owner: Product Catalogue.
+
+Starter and Pro service periods beginning on or after 1 May 2026 use catalogue revision `RET-2026-05`, whose retention values are recorded in [RET-POL-003]. Workspace plan records store the service-period start and catalogue revision. Enterprise workspaces use their signed order form instead.

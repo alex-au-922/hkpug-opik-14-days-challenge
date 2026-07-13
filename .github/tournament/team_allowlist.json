@@ -4,82 +4,82 @@
       "team_id": "organizer-test",
       "display_name": "Organizer Test Team",
       "cert_path": "public_keys/organizer-test_cert.pem",
-      "cert_sha256": "4c9edd52c52361330e0dabba937816f203a976cdc81118be9879a1418244c76e"
+      "cert_sha256": "fcc5154c5d8e0151f9af36bdfc619de188c734b9be18f85a76a8ff9615b11264"
     },
     {
       "team_id": "team-01",
       "cert_path": "public_keys/team-01_cert.pem",
-      "cert_sha256": "186ca06554faf373e436ab5afc4bec0272b260bcbf819e16d5c4dc6b0a894e64"
+      "cert_sha256": "9f5f6f7c246c453ff7a223cc497c9b2d0d9199d89741e02de3a2f631624df3a9"
     },
     {
       "team_id": "team-02",
       "cert_path": "public_keys/team-02_cert.pem",
-      "cert_sha256": "8bc0c8b4528990b286d1253c2822dde51f5f1391e7c577fd7ded1d66f8d1e039"
+      "cert_sha256": "c41e3fc39734638c98114cfd3d96dd71b33d1540e8c65b0e6e6279da324cb2f6"
     },
     {
       "team_id": "team-03",
       "cert_path": "public_keys/team-03_cert.pem",
-      "cert_sha256": "12a3f8128759ddf149296acb7dd26d4109ecae5a7eee2b1f92bec391ca144eab"
+      "cert_sha256": "2cd0445695def319a13b9cc57ec939efc4ec45b9c9934f5c2c203426658b513f"
     },
     {
       "team_id": "team-04",
       "cert_path": "public_keys/team-04_cert.pem",
-      "cert_sha256": "6a76b490743848cd836d3149154ae65516926308ac625287e7143a311503ed83"
+      "cert_sha256": "d16982327c23d7d2a7f05f7c9b02f777506aa07b45aea18eacc72ee99370e96a"
     },
     {
       "team_id": "team-05",
       "cert_path": "public_keys/team-05_cert.pem",
-      "cert_sha256": "503876e47a30f9153f183c9a5918730e6df5495b923e28d528b1794ec5c2ced5"
+      "cert_sha256": "1bd15f78803640801425542d029493abd8f828edcdbc7dbf99bccae087e9f742"
     },
     {
       "team_id": "team-06",
       "cert_path": "public_keys/team-06_cert.pem",
-      "cert_sha256": "59f367e52629e2817a6bf8a90b116034932cded81a6029b4880701937d31d21b"
+      "cert_sha256": "87e015cee4b063a149c8555d1ea83934a60643419bc8de9b0feeac566f45b6ad"
     },
     {
       "team_id": "team-07",
       "cert_path": "public_keys/team-07_cert.pem",
-      "cert_sha256": "1d3cf51fc012ca5b928f36711618f242100ac1dba4e59b029d17c732da5e8548"
+      "cert_sha256": "aef6106aea9a8df0d15c892e7c56a192aa747758d0b09f9f8d63c961eff6a5fa"
     },
     {
       "team_id": "team-08",
       "cert_path": "public_keys/team-08_cert.pem",
-      "cert_sha256": "11b20c032215da43f4982a0a9b98e2e7effe815ac1e8618015d42959faae7c76"
+      "cert_sha256": "cbd7f4ce6c600998ecd2df18728d1932f4026813530d76ee04a585227525d676"
     },
     {
       "team_id": "team-09",
       "cert_path": "public_keys/team-09_cert.pem",
-      "cert_sha256": "ecfd102ea9e657ba5812b16b438b5fbb132a38cce1ebefba4455738a8df2d94a"
+      "cert_sha256": "b72e000dff6040aee29241f6fe31e5d8751902baf701ff91849d0e8b50760010"
     },
     {
       "team_id": "team-10",
       "cert_path": "public_keys/team-10_cert.pem",
-      "cert_sha256": "d0e55f5dea66b04c387acec06847530723821c50de738c7412674f607fbba924"
+      "cert_sha256": "18e89bd960d180aa7de77dc60252d60be01cafb125ff2d41a1dd9eab0e1c8b08"
     },
     {
       "team_id": "team-11",
       "cert_path": "public_keys/team-11_cert.pem",
-      "cert_sha256": "9e874eb7232594afc1b9beb95f0c1d4f5b4a9e893fca1d24137e9b16254f6722"
+      "cert_sha256": "6833018a7072cecc8124452b149465a2ef82c73dbf32c1c395ae569b6d0b3ded"
     },
     {
       "team_id": "team-12",
       "cert_path": "public_keys/team-12_cert.pem",
-      "cert_sha256": "946cccd4c4d4e10382eb13c75b2b0bba4d0e46950ef9853767b5245274bbad6c"
+      "cert_sha256": "bd027396340a846b763be4c4d6f4f540faaa5afcc2264ab9a04be1a55232a20b"
     },
     {
       "team_id": "team-13",
       "cert_path": "public_keys/team-13_cert.pem",
-      "cert_sha256": "bf9b328bf123b1a7e2604aad024ac0a8da0a8698bdae25545aedc080401427f1"
+      "cert_sha256": "d721a8a086f04b6168efa622ba992b9a387a78d8c3cd492f2818de04272cbc19"
     },
     {
       "team_id": "team-14",
       "cert_path": "public_keys/team-14_cert.pem",
-      "cert_sha256": "09d3b7149ed567f69f464d29c3e5696b000e0afb487d7554b6c8ee57682ffbd5"
+      "cert_sha256": "d72c4e79bafc2329b3734800f3849ca812285fd7344a78c7455b430d170ac7bd"
     },
     {
       "team_id": "team-15",
       "cert_path": "public_keys/team-15_cert.pem",
-      "cert_sha256": "719ae3fc69d451746e94ed068adaf7c78b1bf9db9629572715292a3e7b94c7bf"
+      "cert_sha256": "566155a9e1409196e9cada85dbad2412d7129b1b0e0f3ca2c72215fecb51b86c"
     }
   ]
 }

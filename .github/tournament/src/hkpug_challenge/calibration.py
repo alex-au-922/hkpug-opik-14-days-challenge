@@ -102,6 +102,7 @@ class CalibrationScorer(Protocol):
         max_run_tokens: int,
         include_holdout_details: bool,
         on_case_start: Callable[[int, int], None] | None = None,
+        allow_experimental_candidate: bool = False,
     ) -> dict[str, Any]: ...
 
 
@@ -253,6 +254,7 @@ def run_calibration(
     judge_client: CompletionClient,
     candidate_model: str = FIREWORKS_MODEL,
     judge_model: str = JUDGE_MODEL,
+    allow_experimental_candidate: bool = False,
     scorer: CalibrationScorer | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> CalibrationResult:
@@ -265,6 +267,7 @@ def run_calibration(
     candidate_model, judge_model = validate_scoring_models(
         candidate_model,
         judge_model,
+        allow_experimental_candidate=allow_experimental_candidate,
     )
     _validate_bank(bank)
     profiles = _load_profiles(prompt_directory)
@@ -291,22 +294,25 @@ def run_calibration(
             case_scores.append(profile_case_scores)
             continue
         case_callback = _case_callback(profile.name, on_progress)
-        raw_result = score(
-            team_id="organizer-calibration",
-            attempt=attempt,
-            run_id=f"calibration-{profile.name}",
-            participant_prompt=profile.prompt,
-            cases=bank.cases,
-            public_directory=public_directory,
-            candidate_client=candidate_client,
-            judge_client=judge_client,
-            candidate_model=candidate_model,
-            judge_model=judge_model,
-            max_calls=100,
-            max_run_tokens=MAX_RUN_TOKENS,
-            include_holdout_details=True,
-            on_case_start=case_callback,
-        )
+        score_args = {
+            "team_id": "organizer-calibration",
+            "attempt": attempt,
+            "run_id": f"calibration-{profile.name}",
+            "participant_prompt": profile.prompt,
+            "cases": bank.cases,
+            "public_directory": public_directory,
+            "candidate_client": candidate_client,
+            "judge_client": judge_client,
+            "candidate_model": candidate_model,
+            "judge_model": judge_model,
+            "max_calls": 100,
+            "max_run_tokens": MAX_RUN_TOKENS,
+            "include_holdout_details": True,
+            "on_case_start": case_callback,
+        }
+        if allow_experimental_candidate:
+            score_args["allow_experimental_candidate"] = True
+        raw_result = score(**score_args)
         profile_result, profile_case_scores = _parse_profile_result(
             profile=profile,
             raw_result=raw_result,

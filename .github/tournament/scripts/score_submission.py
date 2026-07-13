@@ -66,6 +66,7 @@ def main() -> int:
             candidate_client=FireworksClient(
                 api_key,
                 model=candidate_model,
+                empty_on_missing_content=True,
                 on_retry=_log_retry,
             ),
             judge_client=FireworksClient(

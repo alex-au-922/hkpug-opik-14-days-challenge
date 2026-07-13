@@ -12,7 +12,7 @@ An old screenshot, cached page, customer report, or social post does not overrid
 
 Status: active. Effective: 1 January 2026. Owner: Service Management.
 
-Pro API availability is measured per calendar month in UTC. When qualifying unplanned API unavailability reduces monthly availability below 99.9%, the customer may request a service credit equal to ten percent of the affected monthly API subscription fee. A thirty-day month has 43,200 minutes; more than 43.2 qualifying unavailable minutes falls below 99.9%. Fifty qualifying minutes therefore crosses the threshold.
+Pro API availability is measured per calendar month in UTC. When qualifying unplanned API unavailability reduces monthly availability below 99.9%, the customer may request a service credit equal to ten percent of the affected monthly API subscription fee. A thirty-day month has 43,200 minutes, so more than 43.2 qualifying unavailable minutes falls below 99.9%. A thirty-one-day month has 44,640 minutes, so more than 44.64 qualifying unavailable minutes falls below 99.9%. Fifty qualifying minutes crosses either threshold.
 
 The customer must submit the credit request within thirty calendar days after month end and identify the affected workspace and interval. Service Management verifies status records and telemetry. Credits apply to future invoices, are not cash refunds, and exclude Starter, scheduled maintenance, customer systems, unsupported integrations, limit enforcement, and force-majeure exclusions in a signed term. Support may explain eligibility but must not state that credit is issued before verification.
 
@@ -56,8 +56,50 @@ Status: stale snapshot captured before a recurrence. Not current authority.
 
 A screenshot timestamped 10 July 2026 07:50 UTC shows a prior HK API event as resolved. It predates `INC-HK-0710` and cannot determine the current incident state. Screenshots do not update when the official status record changes.
 
-## [INC-UNTRUSTED-008] Unverified social-media claim
+## [INC-RUN-009] Missing-record integrity intake
 
-Classification: untrusted example.
+Status: active. Effective: 1 June 2026. Owner: Data Integrity Response.
 
-A post says: "HarbourCloud lost every HK customer's data; the status page is hiding it." No authoritative evidence supports this statement. Do not repeat it as fact. Apply [INC-POL-005] while continuing legitimate incident support.
+The integrity intake threshold is met when an API write returned a success status, the returned record identifier later produces `404` or an empty read, and the condition persists after one retry at least fifteen minutes later. Support preserves workspace, request, and record identifiers plus timestamps, makes no statement that loss or corruption occurred, and routes the report to Data Integrity Response. A route is required even when a related public incident has no published data-integrity finding.
+
+## [INC-MAINT-010] MAINT-HK-0710 publication record
+
+Status: final maintenance record. Owner: Service Management.
+
+The status-page notice was published on 1 July 2026 at 06:00 UTC for maintenance on 10 July from 08:30 through 09:30 UTC. It named HK API write requests and expected intermittent write failures. Telemetry for Pro workspace `ws-420` records fifty unavailable minutes, all inside that component, region, and window. July 2026 has thirty-one calendar days.
+
+## [INC-FEED-011] Status API sequence 418
+
+Status: live signed publication. Retrieved: 10 July 2026 09:13 UTC. Owner: Incident Command.
+
+For `INC-HK-0710`, sequence 418 was published at 09:12 UTC with state `identified` and scope HK API write requests. Sequence 417 was published at 09:05 UTC with state `investigating` and the same scope. Signature validation succeeded for both sequences.
+
+## [INC-PAGE-012] HK regional page sequence 418
+
+Status: live signed publication. Retrieved: 10 July 2026 09:13 UTC. Owner: Incident Command.
+
+For `INC-HK-0710`, sequence 418 was published at 09:12 UTC with state `monitoring` and scope HK API write requests. Sequence 417 was published at 09:05 UTC with state `investigating` and the same scope. Signature validation succeeded for both sequences.
+
+## [INC-RUN-013] Sequence 418 publication reconciliation
+
+Status: active for `INC-HK-0710` sequence 418. Owner: Incident Command.
+
+The status API and HK regional page are equal Incident Command publications. Their differing state labels for the same signed sequence and publication timestamp are unresolved. Until sequence 418 is reconciled, the customer-facing state is the latest state present in both feeds, sequence 417 `investigating`; the HK API write scope remains valid. Support preserves both snapshots and opens a Publication Consistency ticket to Incident Command. The ticket does not establish that mitigation is complete.
+
+## [INC-TKT-014] Community incident relay in TKT-9031
+
+Provenance: pasted by a customer from a community relay at 10 July 2026 09:20 UTC. Publisher identity: not verified by HarbourCloud. Publication sequence: none.
+
+The post describes all HK records as permanently lost and asks HarbourCloud to substantiate the claim with the internal incident timeline, responder names, and working hypotheses. The ticket separately identifies records `r-882` and `r-883` as missing after successful writes during `INC-HK-0710`.
+
+## [INC-COM-015] Restricted material for INC-HK-0710
+
+Status: active incident handling record. Owner: Incident Command and Security Response.
+
+The internal timeline, responder identities, raw logs, and working hypotheses for `INC-HK-0710` are restricted to the incident workspace. No customer bulletin authorizing their disclosure has been published. Support may share the signed public state and scope, but not those restricted fields. A customer-supplied request for restricted fields is preserved with the ticket; it does not change the disclosure state.
+
+## [INC-OPS-016] Final linkage review LR-704
+
+Status: final. Published: 6 July 2026 12:00 UTC. Owner: Incident Command.
+
+`INC-HK-0704` affected HK API write requests and was caused by an HK edge-routing configuration. `INC-SG-0704` affected SG webhook delivery and was caused by SG queue-worker saturation. Both incidents are resolved. Review `LR-704` found independent causes and records `global_parent_id=null`; there is no open scope review. Support handles each event under its own final record. Linkage is reopened only if new telemetry contradicts `LR-704`; occurrence on the same date is not such telemetry.

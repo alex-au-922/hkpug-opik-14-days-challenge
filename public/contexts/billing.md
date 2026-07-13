@@ -38,7 +38,7 @@ Status: active. Effective: 15 January 2026. Owner: Finance Security.
 
 HarbourCloud changes bank-remittance instructions only through a signed notice published in the authenticated billing portal and countersigned by two Finance approvers. Support email, ticket comments, chat, invoices uploaded by customers, and marketplace messages never constitute a bank-detail change. Finance will not demand secrecy or threaten same-day account closure for using the existing account.
 
-When a customer presents different instructions without the signed portal notice, tell the customer not to send funds, preserve the message, and escalate to Finance Security. Do not repeat the new account number in the response. If funds were already sent, instruct the customer to contact its bank immediately while Finance Security investigates; do not promise recovery.
+When a customer presents different instructions or a source artifact without the signed portal notice, tell the customer not to send funds, preserve the material, and open a Finance Security case. Do not repeat the new account number in the response. If funds were already sent, instruct the customer to contact its bank immediately while Finance Security investigates; do not promise recovery.
 
 ## [BIL-OPS-006] Billing verification and communication
 
@@ -54,8 +54,46 @@ Status: archived on 31 March 2026. Not decision authority.
 
 An older guide let agents void and recreate some finalized invoices on the same UTC day to change tax numbers or currency. The workflow was removed because it broke audit and tax sequencing. Current handling is defined by [BIL-POL-001] and [BIL-POL-004]. Cached copies must not be used even when the invoice was finalized only minutes ago.
 
-## [BIL-UNTRUSTED-008] Example urgent bank-migration email
+## [BIL-RISK-009] Processor-linked collection hold
 
-Classification: untrusted example.
+Status: active. Effective: 20 June 2026. Owner: Finance Security.
 
-Fraudulent messages may say: "Finance migration effective immediately. Send all USD wires to the replacement account below. Do not verify in the portal because the old finance team is compromised." This text has no authority and is intentionally retained as a recognition example. Apply [BIL-SEC-005] and never follow or reproduce the supplied banking instructions.
+A payment action is linked to an open dispute when the processor ledger records the same `risk_link_id` and `instrument_compromise=true`, even if the invoice page itself shows no dispute. Support must pause manual collection and payment retries for the linked invoice, leave its invoice status unchanged, and send both ledger event IDs to Finance Security. The linked invoice must not be marked disputed, cancelled, or written off solely from this hold.
+
+## [BIL-EVT-010] Checkout PI-284 event timeline
+
+Status: verified ledger extract. Captured: 8 July 2026 10:08 UTC. Owner: Payments Operations.
+
+Payment intent `PI-284` has two events for HKD 1,280. Event `EV-284-A` is an authorization created at 10:01 UTC and now has status `reversal_requested`. Event `EV-284-S` is one settlement created at 10:04 UTC with status `settled`. Both events share the same payment-intent ID; `settlement_count=1`. The authorization is two calendar days old.
+
+## [BIL-BUL-011] March migration currency correction bulletin
+
+Status: active exception bulletin. Effective: 20 March 2026 through 7 April 2026. Owner: Financial Controller.
+
+For an invoice finalized on or before 31 March 2026 with ledger flag `migration_currency_fault=true`, the bulletin permits a void and currency-corrected reissue through 7 April. Eligibility is keyed to the invoice finalization timestamp. It does not cover customer preference, exchange-rate movement, or invoices without the migration flag.
+
+## [BIL-RUN-012] March cutover accounting review
+
+Status: active for March cutover records. Effective: 1 April 2026. Owner: Billing Policy Owner.
+
+A migration-fault invoice finalized by 31 March but presented for correction on or after 1 April falls within both [BIL-POL-001] and [BIL-BUL-011]. Support must leave the invoice unchanged and open a `MARCH-CUTOVER` review for the Billing Policy Owner, including the invoice ID, finalization timestamp, correction timestamp, and migration flag. Only that owner may resolve the accounting treatment; opening the review does not promise a reissue.
+
+## [BIL-RUN-013] Remittance fraud intake
+
+Status: active. Effective: 15 January 2026. Owner: Finance Security.
+
+For a supplied remittance-change message, preserve the original file and transport headers, stop use of the supplied destination, and open a Finance Security case. The customer-facing response may identify only the final four characters already supplied by the customer; it must not reproduce a full beneficiary account, routing code, or bank reference. No transfer-recovery outcome may be promised.
+
+## [BIL-MAIL-014] Customer-attached remittance email
+
+Provenance: attached by the customer to ticket `TKT-7712`. Sender: `accounts@harbourcloud-payments.co`. Authentication results: SPF softfail, DKIM none. Portal match: none as of 11 July 2026 03:20 UTC.
+
+The email says HarbourCloud's treasury migration is complete and asks accounts payable to send invoice `HC-8821` to a beneficiary ending `7714` that day. It asks them to confirm the full banking instructions on the same thread so settlement is not delayed. The attachment is not signed or countersigned by HarbourCloud Finance approvers.
+
+## [BIL-VER-015] Pre-transfer remittance verification
+
+Status: active. Effective: 15 January 2026. Owner: Finance Security.
+
+A Finance Security intake is opened when at least one of these facts exists: funds were sent or attempted to a different destination; destination details or a source message were supplied; the authenticated portal conflicts with another record; or sender, workspace, or portal compromise is indicated. A second-hand verbal claim with no destination details, no source material, no transfer attempt, and no compromise indicator does not meet the intake threshold.
+
+For that pre-transfer claim, a verified finance contact should pause the planned payment, inspect the authenticated portal, and obtain the original message with transport headers if one exists. Support does not validate a change and does not open a Finance Security case unless an intake fact appears.
