@@ -164,6 +164,7 @@ def build_trace_bundle(
         "weights": _required_object(scoring_result, "weights"),
         "discovery": _aggregate_only(discovery),
         "holdout": holdout,
+        "token_usage": _required_token_usage(scoring_result),
         "started_at": _required_text(scoring_result, "started_at"),
         "completed_at": _required_text(scoring_result, "completed_at"),
     }
@@ -217,6 +218,24 @@ def _aggregate_only(value: dict[str, object]) -> dict[str, object]:
         "case_count": _required_int(value, "case_count"),
         "criteria": _required_object(value, "criteria"),
         "score": _required_number(value, "score"),
+    }
+
+
+def _required_token_usage(value: dict[str, object]) -> dict[str, dict[str, int]]:
+    token_usage = _required_object(value, "token_usage")
+    return {
+        bucket: {
+            "prompt_tokens": _required_int(
+                _required_object(token_usage, bucket), "prompt_tokens"
+            ),
+            "completion_tokens": _required_int(
+                _required_object(token_usage, bucket), "completion_tokens"
+            ),
+            "total_tokens": _required_int(
+                _required_object(token_usage, bucket), "total_tokens"
+            ),
+        }
+        for bucket in ("candidate", "judge", "total")
     }
 
 

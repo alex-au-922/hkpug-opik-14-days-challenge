@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from hkpug_challenge.evaluation_bank import load_evaluation_bank
 from hkpug_challenge.fireworks import (
@@ -95,8 +95,8 @@ def _write_outputs(output: Path, result: dict[str, Any]) -> None:
 
 
 def _public_summary(result: dict[str, Any]) -> dict[str, Any]:
-    discovery = result["discovery"]
-    holdout = result["holdout"]
+    discovery = _aggregate_only(_required_object(result, "discovery"))
+    holdout = _aggregate_only(_required_object(result, "holdout"))
     return {
         "schema_version": 1,
         "team_id": result["team_id"],
@@ -111,6 +111,7 @@ def _public_summary(result: dict[str, Any]) -> dict[str, Any]:
             "score": discovery["score"],
         },
         "holdout": holdout,
+        "token_usage": _required_token_usage(result),
         "call_count": result["call_count"],
         "started_at": result["started_at"],
         "completed_at": result["completed_at"],
@@ -131,6 +132,53 @@ def _scoring_models() -> tuple[str, str]:
         os.environ.get("FIREWORKS_MODEL", ""),
         os.environ.get("JUDGE_MODEL", ""),
     )
+
+
+def _aggregate_only(value: dict[str, object]) -> dict[str, object]:
+    return {
+        "case_count": _required_int(value, "case_count"),
+        "criteria": _required_object(value, "criteria"),
+        "score": _required_number(value, "score"),
+    }
+
+
+def _required_token_usage(value: dict[str, object]) -> dict[str, dict[str, int]]:
+    token_usage = _required_object(value, "token_usage")
+    return {
+        bucket: {
+            "prompt_tokens": _required_int(
+                _required_object(token_usage, bucket), "prompt_tokens"
+            ),
+            "completion_tokens": _required_int(
+                _required_object(token_usage, bucket), "completion_tokens"
+            ),
+            "total_tokens": _required_int(
+                _required_object(token_usage, bucket), "total_tokens"
+            ),
+        }
+        for bucket in ("candidate", "judge", "total")
+    }
+
+
+def _required_object(value: dict[str, object], key: str) -> dict[str, object]:
+    item = value.get(key)
+    if not isinstance(item, dict):
+        raise ValueError(f"Scoring result field {key} must be an object.")
+    return cast(dict[str, object], item)
+
+
+def _required_int(value: dict[str, object], key: str) -> int:
+    item = value.get(key)
+    if not isinstance(item, int) or isinstance(item, bool):
+        raise ValueError(f"Scoring result field {key} must be an integer.")
+    return item
+
+
+def _required_number(value: dict[str, object], key: str) -> float:
+    item = value.get(key)
+    if not isinstance(item, (int, float)) or isinstance(item, bool):
+        raise ValueError(f"Scoring result field {key} must be numeric.")
+    return float(item)
 
 
 def _log_progress(current: int, total: int) -> None:

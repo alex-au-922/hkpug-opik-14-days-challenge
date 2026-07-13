@@ -88,6 +88,24 @@ def test_public_summary_excludes_private_scoring_details() -> None:
             "case_count": 10,
             "criteria": {"answer_relevance": 10.0},
             "score": 50.0,
+            "cases": [{"input": "PRIVATE-HOLDOUT-CONTEXT"}],
+        },
+        "token_usage": {
+            "candidate": {
+                "prompt_tokens": 1000,
+                "completion_tokens": 200,
+                "total_tokens": 1200,
+            },
+            "judge": {
+                "prompt_tokens": 800,
+                "completion_tokens": 100,
+                "total_tokens": 900,
+            },
+            "total": {
+                "prompt_tokens": 1800,
+                "completion_tokens": 300,
+                "total_tokens": 2100,
+            },
         },
         "call_count": 100,
         "started_at": "2026-07-13T00:00:00.000Z",
@@ -106,15 +124,96 @@ def test_public_summary_excludes_private_scoring_details() -> None:
         "overall_score",
         "discovery",
         "holdout",
+        "token_usage",
         "call_count",
         "started_at",
         "completed_at",
     }
     assert set(summary["discovery"]) == {"case_count", "criteria", "score"}
+    assert set(summary["holdout"]) == {"case_count", "criteria", "score"}
+    assert summary["token_usage"] == result["token_usage"]
     serialized = json.dumps(summary)
     assert "PRIVATE-JUDGE-METADATA" not in serialized
     assert "PRIVATE-DISCOVERY-CONTEXT" not in serialized
+    assert "PRIVATE-HOLDOUT-CONTEXT" not in serialized
     assert "PRIVATE-JUDGE-REASON" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("token_usage", "message"),
+    [
+        pytest.param(None, "token_usage", id="missing-token-usage"),
+        pytest.param(
+            {
+                "candidate": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 2,
+                    "total_tokens": 3,
+                },
+                "judge": {
+                    "prompt_tokens": 4,
+                    "completion_tokens": 5,
+                    "total_tokens": 9,
+                },
+            },
+            "total",
+            id="missing-total-bucket",
+        ),
+        pytest.param(
+            {
+                "candidate": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 2,
+                    "total_tokens": 3,
+                },
+                "judge": {
+                    "prompt_tokens": 4,
+                    "completion_tokens": 5,
+                    "total_tokens": 9,
+                },
+                "total": {
+                    "prompt_tokens": 5,
+                    "completion_tokens": True,
+                    "total_tokens": 12,
+                },
+            },
+            "completion_tokens",
+            id="bool-token-count",
+        ),
+    ],
+)
+def test_public_summary_requires_valid_aggregate_token_usage(
+    token_usage: object,
+    message: str,
+) -> None:
+    module = load_score_submission_module()
+    result: dict[str, object] = {
+        "team_id": "team-01",
+        "attempt": 1,
+        "run_id": "run-001",
+        "model": FIREWORKS_MODEL,
+        "prompt_sha256": "a" * 64,
+        "overall_score": 50.0,
+        "discovery": {
+            "case_count": 40,
+            "criteria": {"answer_relevance": 10.0},
+            "score": 50.0,
+            "cases": [],
+        },
+        "holdout": {
+            "case_count": 10,
+            "criteria": {"answer_relevance": 10.0},
+            "score": 50.0,
+        },
+        "call_count": 100,
+        "started_at": "2026-07-13T00:00:00.000Z",
+        "completed_at": "2026-07-13T00:01:00.000Z",
+    }
+    if token_usage is not None:
+        result["token_usage"] = token_usage
+
+    with pytest.raises(ValueError, match=message):
+        module._public_summary(result)
 
 
 def load_score_submission_module():

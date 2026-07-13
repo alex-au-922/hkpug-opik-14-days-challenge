@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from uuid import UUID
 
+import pytest
+
 from hkpug_challenge.traces import build_trace_bundle, write_trace_bundle
 
 
@@ -19,6 +21,23 @@ def scoring_result() -> dict[str, object]:
         "weights": {"discovery": 0.75, "holdout": 0.25},
         "overall_score": 87.0,
         "call_count": 4,
+        "token_usage": {
+            "candidate": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "total_tokens": 120,
+            },
+            "judge": {
+                "prompt_tokens": 120,
+                "completion_tokens": 30,
+                "total_tokens": 150,
+            },
+            "total": {
+                "prompt_tokens": 220,
+                "completion_tokens": 50,
+                "total_tokens": 270,
+            },
+        },
         "started_at": "2026-07-12T00:00:00.000Z",
         "completed_at": "2026-07-12T00:00:02.000Z",
         "discovery": {
@@ -114,6 +133,7 @@ def test_trace_bundle_has_answer_and_judge_spans_without_holdout_details() -> No
     assert first["run.json"]["judge_model"] == (
         "accounts/fireworks/models/qwen3p7-plus"
     )
+    assert first["run.json"]["token_usage"] == scoring_result()["token_usage"]
     assert first["trace_payload.json"]["traces"][0]["metadata"]["model"] == (
         "accounts/fireworks/models/deepseek-v4-flash"
     )
@@ -129,6 +149,14 @@ def test_trace_bundle_has_answer_and_judge_spans_without_holdout_details() -> No
     assert "participant_prompt" not in serialized
     assert "reference" not in serialized
     assert first["run.json"]["holdout"] == scoring_result()["holdout"]
+
+
+def test_trace_bundle_requires_valid_aggregate_token_usage() -> None:
+    payload = scoring_result()
+    del payload["token_usage"]
+
+    with pytest.raises(ValueError, match="token_usage"):
+        build_trace_bundle(payload)
 
 
 def test_write_trace_bundle_creates_only_replay_files(tmp_path: Path) -> None:
