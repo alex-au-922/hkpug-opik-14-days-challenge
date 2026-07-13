@@ -12,38 +12,38 @@
       "holdout": 0.25
     }
   },
-  "generated_at": "2026-07-13T02:41:29.006000Z",
+  "generated_at": "2026-07-13T02:47:52.370000Z",
   "schema_version": 1,
   "teams": [
     {
-      "attempts_remaining": 7,
-      "attempts_used": 1,
+      "attempts_remaining": 6,
+      "attempts_used": 2,
       "best": {
-        "attempt": 1,
-        "completed_at": "2026-07-13T02:41:29.006000Z",
+        "attempt": 2,
+        "completed_at": "2026-07-13T02:47:52.370000Z",
         "criteria": {
-          "answer_relevance": 19.44,
-          "deterministic": 37.73,
-          "faithfulness": 22.27,
-          "instruction_following": 13.34
+          "answer_relevance": 19.54,
+          "deterministic": 37.6,
+          "faithfulness": 22.73,
+          "instruction_following": 14.15
         },
-        "discovery_score": 92.77,
-        "holdout_score": 92.79,
-        "overall_score": 92.78
+        "discovery_score": 94.89,
+        "holdout_score": 91.42,
+        "overall_score": 94.02
       },
       "display_name": "Organizer Test Team",
       "latest": {
-        "attempt": 1,
-        "completed_at": "2026-07-13T02:41:29.006000Z",
+        "attempt": 2,
+        "completed_at": "2026-07-13T02:47:52.370000Z",
         "criteria": {
-          "answer_relevance": 19.44,
-          "deterministic": 37.73,
-          "faithfulness": 22.27,
-          "instruction_following": 13.34
+          "answer_relevance": 19.54,
+          "deterministic": 37.6,
+          "faithfulness": 22.73,
+          "instruction_following": 14.15
         },
-        "discovery_score": 92.77,
-        "holdout_score": 92.79,
-        "overall_score": 92.78
+        "discovery_score": 94.89,
+        "holdout_score": 91.42,
+        "overall_score": 94.02
       },
       "rank": 1,
       "runs": [
@@ -59,6 +59,19 @@
           "discovery_score": 92.77,
           "holdout_score": 92.79,
           "overall_score": 92.78
+        },
+        {
+          "attempt": 2,
+          "completed_at": "2026-07-13T02:47:52.370000Z",
+          "criteria": {
+            "answer_relevance": 19.54,
+            "deterministic": 37.6,
+            "faithfulness": 22.73,
+            "instruction_following": 14.15
+          },
+          "discovery_score": 94.89,
+          "holdout_score": 91.42,
+          "overall_score": 94.02
         }
       ],
       "team_id": "organizer-test"
