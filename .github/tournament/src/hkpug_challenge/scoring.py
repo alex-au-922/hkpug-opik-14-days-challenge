@@ -52,6 +52,7 @@ DETERMINISTIC_CRITERIA = (
     "escalation",
 )
 SHARED_CONTEXT_PATH = "contexts/company_handbook.md"
+MANAGER_REVIEW_PREFIX = "Manager review "
 
 
 class _JudgeReasons(BaseModel):
@@ -590,14 +591,20 @@ def _capped_judge_scores(
     *, case: EvaluationCase, judge: _JudgePayload
 ) -> dict[str, int]:
     required_point_count = len(case.rubric.required_points)
-    relevance_cap = JUDGE_TIERS[-1]
-    if required_point_count:
-        coverage_tier = (
-            len(judge.required_points_met)
-            * (len(JUDGE_TIERS) - 1)
-            // required_point_count
-        )
-        relevance_cap = JUDGE_TIERS[coverage_tier]
+    relevance_cap = _coverage_cap(
+        met_count=len(judge.required_points_met),
+        required_count=required_point_count,
+    )
+    manager_review_indexes = frozenset(
+        index
+        for index, point in enumerate(case.rubric.required_points)
+        if point.startswith(MANAGER_REVIEW_PREFIX)
+    )
+    manager_review_met = manager_review_indexes.intersection(judge.required_points_met)
+    instruction_cap = _coverage_cap(
+        met_count=len(manager_review_met),
+        required_count=len(manager_review_indexes),
+    )
 
     faithfulness_cap = (
         50
@@ -606,9 +613,16 @@ def _capped_judge_scores(
     )
     return {
         "answer_relevance": min(judge.answer_relevance, relevance_cap),
-        "instruction_following": judge.instruction_following,
+        "instruction_following": min(judge.instruction_following, instruction_cap),
         "faithfulness": min(judge.faithfulness, faithfulness_cap),
     }
+
+
+def _coverage_cap(*, met_count: int, required_count: int) -> int:
+    if required_count == 0:
+        return JUDGE_TIERS[-1]
+    coverage_tier = met_count * (len(JUDGE_TIERS) - 1) // required_count
+    return JUDGE_TIERS[coverage_tier]
 
 
 def _raw_judge_scores(judge: _JudgePayload) -> dict[str, int]:
@@ -634,6 +648,24 @@ def _cap_explanations(
             f"Answer relevance tier capped from {raw_relevance} to "
             f"{effective_relevance}: {len(judge.required_points_met)} of "
             f"{len(case.rubric.required_points)} required points were materially "
+            "satisfied."
+        )
+
+    manager_review_indexes = frozenset(
+        index
+        for index, point in enumerate(case.rubric.required_points)
+        if point.startswith(MANAGER_REVIEW_PREFIX)
+    )
+    raw_instruction = raw_scores["instruction_following"]
+    effective_instruction = effective_scores["instruction_following"]
+    if effective_instruction < raw_instruction:
+        manager_review_met = manager_review_indexes.intersection(
+            judge.required_points_met
+        )
+        explanations["instruction_following"] = (
+            f"Instruction-following tier capped from {raw_instruction} to "
+            f"{effective_instruction}: {len(manager_review_met)} of "
+            f"{len(manager_review_indexes)} manager-review points were materially "
             "satisfied."
         )
 

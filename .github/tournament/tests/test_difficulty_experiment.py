@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -159,12 +160,7 @@ def test_gated_score_rejects_invalid_json() -> None:
 
 def test_select_balanced_cases_fails_without_distinct_domains() -> None:
     cases = tuple(
-        EvaluationCase(
-            **{
-                **make_case(index, archetype).__dict__,
-                "domain": "one-domain",
-            }
-        )
+        replace(make_case(index, archetype), domain="one-domain")
         for index, archetype in enumerate(ARCHETYPES)
     )
 
@@ -178,6 +174,30 @@ def test_production_prompt_profiles_are_cumulative() -> None:
     assert tuple(name for name, _ in profiles) == PRODUCTION_PROFILE_ORDER
     for (_, previous), (_, current) in zip(profiles, profiles[1:]):
         assert current.startswith(previous)
+
+
+def test_production_prompt_profiles_route_context_and_label_review_clauses() -> None:
+    profiles = dict(production_prompt_profiles())
+
+    authority = profiles["evidence-authority"]
+    assert "contexts/company_handbook.md" in authority
+    assert "relevant domain file" in authority
+    assert "Evidence basis" in authority
+    assert "Conditions" in authority
+    assert "Rejected evidence:" not in authority
+    assert "Escalation reason:" not in authority
+
+    conflict = profiles["conflict-resistance"]
+    assert "Rejected evidence clause" in conflict
+    assert "Evidence basis" in conflict
+    assert "Conditions" in conflict
+    assert "Escalation reason clause" not in conflict
+
+    escalation = profiles["uncertainty-escalation"]
+    assert "Evidence basis" in escalation
+    assert "Conditions" in escalation
+    assert "Rejected evidence clause" in escalation
+    assert "Escalation reason clause" in escalation
 
 
 def test_production_prompt_rejects_unknown_profile() -> None:
@@ -247,7 +267,7 @@ def test_production_adversarial_case_applies_archetype_review_contract(
 
 
 def test_production_bank_variant_identifies_the_scored_transformation() -> None:
-    assert PRODUCTION_BANK_VARIANT == "manager-review-v2"
+    assert PRODUCTION_BANK_VARIANT == "manager-review-v3"
 
 
 def test_contract_gated_score_ignores_semantic_audit_noise() -> None:

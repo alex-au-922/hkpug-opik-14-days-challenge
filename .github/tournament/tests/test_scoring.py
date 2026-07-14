@@ -27,6 +27,7 @@ from hkpug_challenge.scoring import (
     JUDGE_MAX_TOKENS,
     MAX_RUN_CALLS,
     MAX_RUN_TOKENS,
+    score_case,
     score_prompt,
 )
 from hkpug_challenge.traces import build_trace_bundle
@@ -425,6 +426,112 @@ def test_score_prompt_caps_relevance_by_required_point_coverage(
 
     assert result["discovery"]["criteria"]["answer_relevance"] == 10.0
     assert result["holdout"]["criteria"]["answer_relevance"] == 10.0
+
+
+def test_score_case_caps_instruction_following_for_manager_review_points(
+    tmp_path: Path,
+) -> None:
+    case = replace(
+        make_case("MANAGER-01", "discovery"),
+        rubric=replace(
+            make_case("MANAGER-01", "discovery").rubric,
+            required_points=(
+                "State Alpha.",
+                "Manager review states the controlling evidence.",
+                "Manager review explains the decision condition.",
+            ),
+        ),
+    )
+    response = judge_response(
+        instruction=100,
+        required_points_met=(0, 1),
+    )
+    token_usage = {
+        bucket: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        for bucket in ("candidate", "judge", "total")
+    }
+
+    result = score_case(
+        case=case,
+        participant_prompt="Return JSON.",
+        public_directory=write_contexts(tmp_path),
+        candidate_client=FakeCompletionClient([valid_answer()]),
+        judge_client=FakeCompletionClient([response]),
+        candidate_model=FIREWORKS_MODEL,
+        token_usage=token_usage,
+        max_run_tokens=MAX_RUN_TOKENS,
+    )
+
+    assert result["judge"]["raw_tiers"]["instruction_following"] == 100
+    assert result["judge"]["effective_tiers"]["instruction_following"] == 50
+    reason = result["reasons"]["instruction_following"]
+    assert "capped from 100 to 50" in reason
+    assert "1 of 2 manager-review points" in reason
+
+
+def test_score_case_leaves_instruction_following_uncapped_without_manager_review_points(
+    tmp_path: Path,
+) -> None:
+    result = score_case(
+        case=make_case("NO-MANAGER-01", "discovery"),
+        participant_prompt="Return JSON.",
+        public_directory=write_contexts(tmp_path),
+        candidate_client=FakeCompletionClient([valid_answer()]),
+        judge_client=FakeCompletionClient(
+            [judge_response(instruction=100, required_points_met=())]
+        ),
+        candidate_model=FIREWORKS_MODEL,
+        token_usage={
+            bucket: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            for bucket in ("candidate", "judge", "total")
+        },
+        max_run_tokens=MAX_RUN_TOKENS,
+    )
+
+    assert result["judge"]["effective_tiers"]["instruction_following"] == 100
+    assert "instruction_following" not in result["judge"]["cap_explanations"]
+    assert result["reasons"]["instruction_following"] == (
+        "Follows the response contract."
+    )
+
+
+def test_score_prompt_publishes_manager_review_instruction_cap_reason(
+    tmp_path: Path,
+) -> None:
+    base_case = make_case("MANAGER", "discovery")
+    manager_case = replace(
+        base_case,
+        rubric=replace(
+            base_case.rubric,
+            required_points=(
+                "Manager review identifies the controlling evidence.",
+                "Manager review explains the decision condition.",
+            ),
+        ),
+    )
+    cases = tuple(
+        replace(manager_case, case_id=f"DISC-{index:02d}") for index in range(1, 41)
+    ) + tuple(
+        replace(manager_case, case_id=f"HOLD-{index:02d}", partition="holdout")
+        for index in range(1, 11)
+    )
+
+    result = score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-manager-review-cap",
+        participant_prompt="Return JSON.",
+        cases=cases,
+        public_directory=write_contexts(tmp_path),
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=FakeCompletionClient(
+            [judge_response(required_points_met=(0,))] * 50
+        ),
+    )
+
+    reason = result["discovery"]["cases"][0]["reasons"]["instruction_following"]
+    assert "capped from 100 to 50" in reason
+    assert "1 of 2 manager-review points" in reason
 
 
 @pytest.mark.parametrize(
