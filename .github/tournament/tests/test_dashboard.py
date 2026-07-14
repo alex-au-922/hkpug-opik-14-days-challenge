@@ -363,6 +363,35 @@ def test_submission_feedback_guide_explains_the_tournament_trace_contract() -> N
     ) in html
 
 
+def test_submission_feedback_guide_turns_scores_into_targeted_prompt_changes() -> None:
+    page = SUBMISSION_FEEDBACK / "index.html"
+
+    assert page.is_file()
+    html, _ = parse_page(page)
+
+    for text in (
+        "Improve one weakness at a time",
+        "Fix deterministic failures first",
+        "Score signal",
+        "What a low score usually means",
+        "Prompt change to test",
+        "JSON schema",
+        "Citation validity",
+        "Evidence coverage",
+        "Escalation",
+        "Answer relevance",
+        "Instruction following",
+        "Faithfulness",
+        "Choose one repeated weakness",
+        "Do not optimize one trace in isolation",
+        "A longer prompt is not automatically a stronger prompt.",
+    ):
+        assert text in html
+
+    assert "Copy this winning prompt" not in html
+    assert "hidden answer" not in html.lower()
+
+
 def test_leaderboard_has_semantic_structure_and_required_states() -> None:
     html, parser = parse_page(LEADERBOARD / "index.html")
 

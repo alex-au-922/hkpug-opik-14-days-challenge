@@ -153,6 +153,91 @@ powershell -ExecutionPolicy ByPass -c ".\opik.ps1"</code></pre>
         <p>Use the seven score columns to find a pattern: JSON schema, Citation validity, Evidence coverage, Escalation, Answer relevance, Instruction following, and Faithfulness.</p>
       </section>
 
+      <section class="tutorial-section" aria-labelledby="improve-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">08</span>
+            <h2 id="improve-title">Improve one weakness at a time</h2>
+          </div>
+          <p>Fix deterministic failures first. They account for 40 points and make semantic failures easier to diagnose. Then use the three judge scores to refine the substance of the answer.</p>
+        </div>
+
+        <div class="score-action-guide" role="group" aria-label="Score signals and prompt changes">
+          <div class="score-action-head" aria-hidden="true">
+            <span>Score signal</span>
+            <span>What a low score usually means</span>
+            <span>Prompt change to test</span>
+          </div>
+          <article>
+            <h3>JSON schema</h3>
+            <p><strong>What a low score usually means:</strong> The response is not one valid JSON object, has extra keys or text, uses the wrong value types, or exceeds 100 words.</p>
+            <p><strong>Prompt change to test:</strong> State the exact three-field output contract and require no markdown or commentary around it.</p>
+          </article>
+          <article>
+            <h3>Citation validity</h3>
+            <p><strong>What a low score usually means:</strong> Citations are empty, duplicated, invented, or absent from the supplied evidence.</p>
+            <p><strong>Prompt change to test:</strong> Require non-empty, unique evidence IDs copied only from the provided context.</p>
+          </article>
+          <article>
+            <h3>Evidence coverage</h3>
+            <p><strong>What a low score usually means:</strong> The answer cites something relevant but does not support every material conclusion it makes.</p>
+            <p><strong>Prompt change to test:</strong> Identify each requested decision and cite the controlling evidence for each one.</p>
+          </article>
+          <article>
+            <h3>Escalation</h3>
+            <p><strong>What a low score usually means:</strong> The boolean does not match the action still required, or the prose and boolean disagree.</p>
+            <p><strong>Prompt change to test:</strong> Base escalation on the next required action and keep the answer text consistent with the boolean.</p>
+          </article>
+          <article>
+            <h3>Answer relevance</h3>
+            <p><strong>What a low score usually means:</strong> The response answers only part of the request, focuses on background, or omits a requested decision.</p>
+            <p><strong>Prompt change to test:</strong> Cover every material part of the user's question before adding explanation.</p>
+          </article>
+          <article>
+            <h3>Instruction following</h3>
+            <p><strong>What a low score usually means:</strong> The response violates the answer contract, length limit, or another explicit instruction.</p>
+            <p><strong>Prompt change to test:</strong> Add a short final audit for format, required fields, word count, and extra text.</p>
+          </article>
+          <article>
+            <h3>Faithfulness</h3>
+            <p><strong>What a low score usually means:</strong> The answer makes an unsupported claim or relies on stale, inapplicable, or untrusted material.</p>
+            <p><strong>Prompt change to test:</strong> Separate controlling evidence from reported facts and omit claims that no authoritative source supports.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="tutorial-section" aria-labelledby="iteration-title">
+        <div class="tutorial-section-header">
+          <div>
+            <span class="section-number" aria-hidden="true">09</span>
+            <h2 id="iteration-title">Turn a pattern into one change</h2>
+          </div>
+          <p>Do not optimize one trace in isolation. A rule that fixes one visible case but harms related cases is overfitting, not progress.</p>
+        </div>
+        <ol class="iteration-steps">
+          <li>
+            <span aria-hidden="true">1</span>
+            <div><strong>Choose one repeated weakness</strong><p>Find the same low criterion or failure pattern in at least three discovery traces.</p></div>
+          </li>
+          <li>
+            <span aria-hidden="true">2</span>
+            <div><strong>Name the pattern</strong><p>Describe the decision error in one sentence without using case IDs or copying case-specific facts.</p></div>
+          </li>
+          <li>
+            <span aria-hidden="true">3</span>
+            <div><strong>Add the smallest general rule</strong><p>Change one idea in the prompt so the rule can apply to unseen cases as well.</p></div>
+          </li>
+          <li>
+            <span aria-hidden="true">4</span>
+            <div><strong>Check the trade-off</strong><p>Ask which previously correct behavior the new rule could damage, then remove conflicts or duplication.</p></div>
+          </li>
+        </ol>
+        <aside class="iteration-warning" aria-label="Prompt iteration warning">
+          <strong>A longer prompt is not automatically a stronger prompt.</strong>
+          <p>Prefer a small, testable rule over a growing list of case-specific exceptions. Scores may move down as well as up, so use each returned bundle as evidence for the next decision.</p>
+        </aside>
+      </section>
+
       <section class="next-route" aria-labelledby="next-title">
         <div>
           <h2 id="next-title">Ready for another run?</h2>
