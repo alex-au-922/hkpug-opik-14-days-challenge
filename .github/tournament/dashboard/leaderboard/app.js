@@ -303,11 +303,15 @@ function renderScoreHistory(teams, updatedAt, timezone) {
     return;
   }
 
-  const scores = teams.flatMap((team) =>
-    team.runs.map((run) => run.overall_score),
+  const chartTeams = teams.map((team) => ({
+    history: runningBestScores(team.runs),
+    team,
+  }));
+  const scores = chartTeams.flatMap(({ history }) =>
+    history.map(({ score }) => score),
   );
-  const timestamps = teams.flatMap((team) =>
-    team.runs.map((run) => Date.parse(run.completed_at)),
+  const timestamps = chartTeams.flatMap(({ history }) =>
+    history.map(({ run }) => Date.parse(run.completed_at)),
   );
   const yBounds = scoreBounds(scores);
   const xBounds = timestampBounds(timestamps, updatedAt);
@@ -352,7 +356,7 @@ function renderScoreHistory(teams, updatedAt, timezone) {
     createSvgElement(
       "desc",
       { id: "score-history-svg-description" },
-      `Step lines show ${scoredRunCount} scored runs. The visible score range is ${formatScore(yBounds.minimum)} to ${formatScore(yBounds.maximum)} points.`,
+      `Step lines show each team's highest score reached so far across ${scoredRunCount} scored runs. The visible score range is ${formatScore(yBounds.minimum)} to ${formatScore(yBounds.maximum)} points.`,
     ),
   );
 
@@ -431,15 +435,13 @@ function renderScoreHistory(teams, updatedAt, timezone) {
   elements.historyChart.append(grid);
 
   const labels = [];
-  teams.forEach((team, index) => {
+  chartTeams.forEach(({ history, team }, index) => {
     const color = SERIES_COLORS[index % SERIES_COLORS.length];
-    const runs = [...team.runs].sort(
-      (left, right) => Date.parse(left.completed_at) - Date.parse(right.completed_at),
-    );
-    const points = runs.map((run) => ({
+    const points = history.map(({ run, score }) => ({
       x: scaleX(Date.parse(run.completed_at)),
-      y: scaleY(run.overall_score),
+      y: scaleY(score),
       run,
+      score,
     }));
     let path = `M ${points[0].x} ${points[0].y}`;
     for (const point of points.slice(1)) {
@@ -468,7 +470,7 @@ function renderScoreHistory(teams, updatedAt, timezone) {
         createSvgElement(
           "title",
           {},
-          `${team.display_name}, run ${point.run.attempt}: ${formatScore(point.run.overall_score)} points at ${formatDateTime(point.run.completed_at, timezone)}`,
+          `${team.display_name}, best after run ${point.run.attempt}: ${formatScore(point.score)} points at ${formatDateTime(point.run.completed_at, timezone)}`,
         ),
       );
       series.append(marker);
@@ -476,7 +478,7 @@ function renderScoreHistory(teams, updatedAt, timezone) {
     elements.historyChart.append(series);
     labels.push({
       color,
-      score: points.at(-1).run.overall_score,
+      score: points.at(-1).score,
       targetY: points.at(-1).y,
       teamId: team.team_id,
     });
@@ -524,6 +526,18 @@ function renderScoreHistory(teams, updatedAt, timezone) {
 
   elements.historyEmpty.hidden = true;
   elements.historyChart.removeAttribute("hidden");
+}
+
+function runningBestScores(runs) {
+  let bestScore = 0;
+  return [...runs]
+    .sort(
+      (left, right) => Date.parse(left.completed_at) - Date.parse(right.completed_at),
+    )
+    .map((run) => {
+      bestScore = Math.max(bestScore, run.overall_score);
+      return { run, score: bestScore };
+    });
 }
 
 function renderCriterionBreakdown(criteria) {
