@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-calls",
         type=int,
-        default=int(os.environ.get("MAX_FIREWORKS_CALLS_PER_RUN", "100")),
+        default=int(os.environ.get("MAX_FIREWORKS_CALLS_PER_RUN", "105")),
     )
     return parser.parse_args()
 

@@ -23,7 +23,12 @@ from hkpug_challenge.fireworks import (
 )
 from hkpug_challenge.models import Message
 from hkpug_challenge.playground import FIXED_SYSTEM_PROMPT
-from hkpug_challenge.scoring import JUDGE_MAX_TOKENS, MAX_RUN_TOKENS, score_prompt
+from hkpug_challenge.scoring import (
+    JUDGE_MAX_TOKENS,
+    MAX_RUN_CALLS,
+    MAX_RUN_TOKENS,
+    score_prompt,
+)
 from hkpug_challenge.traces import build_trace_bundle
 
 
@@ -603,6 +608,31 @@ def test_score_prompt_enforces_call_ceiling_before_model_calls(tmp_path: Path) -
 
     assert answer_client.calls == []
     assert judge_client.calls == []
+
+
+def test_score_prompt_does_not_exceed_call_ceiling_for_contract_retry(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    answer_client = FakeCompletionClient([valid_answer()] * 50)
+    judge_client = FakeCompletionClient(["not-json"])
+
+    with pytest.raises(ValueError, match="Judge response"):
+        score_prompt(
+            team_id="team-01",
+            attempt=1,
+            run_id="run-no-retry-budget",
+            participant_prompt="Return JSON.",
+            cases=make_cases(),
+            public_directory=public,
+            candidate_client=answer_client,
+            judge_client=judge_client,
+            max_calls=100,
+        )
+
+    assert len(answer_client.calls) == 1
+    assert len(judge_client.calls) == 1
+    assert MAX_RUN_CALLS == 105
 
 
 def test_score_prompt_uses_documented_default_run_token_limit(tmp_path: Path) -> None:

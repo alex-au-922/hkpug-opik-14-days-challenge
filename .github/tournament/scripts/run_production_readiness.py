@@ -11,6 +11,7 @@ from typing import Any
 
 from hkpug_challenge.context_routing import route_context
 from hkpug_challenge.difficulty_experiment import (
+    PRODUCTION_BANK_VARIANT,
     PRODUCTION_PROFILE_ORDER,
     contract_gated_score,
     production_adversarial_case,
@@ -131,6 +132,7 @@ def main() -> int:
     }
     output = {
         "schema_version": 1,
+        "bank_variant": PRODUCTION_BANK_VARIANT,
         "seed": 0,
         "profile": args.profile,
         "prompt_sha256": sha256(participant_prompt.encode("utf-8")).hexdigest(),
@@ -165,6 +167,7 @@ def main() -> int:
     print(
         json.dumps(
             {
+                "bank_variant": PRODUCTION_BANK_VARIANT,
                 "profile": args.profile,
                 "overall": overall,
                 "routing": output["routing"],

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from hkpug_challenge import fireworks
-from hkpug_challenge.scoring import MAX_RUN_TOKENS
+from hkpug_challenge.scoring import MAX_RUN_CALLS, MAX_RUN_TOKENS
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +21,7 @@ def test_tournament_models_have_distinct_supported_fireworks_defaults() -> None:
 
 def test_scoring_uses_the_documented_run_token_budget() -> None:
     assert MAX_RUN_TOKENS == 1_000_000
+    assert MAX_RUN_CALLS == 105
 
 
 def test_trusted_scoring_passes_repository_model_variables_to_the_scorer() -> None:

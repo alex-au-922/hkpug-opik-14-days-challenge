@@ -39,6 +39,7 @@ HOLDOUT_WEIGHT = 0.25
 MAX_RUN_TOKENS = 1_000_000
 JUDGE_MAX_TOKENS = 2_048
 JUDGE_CONTRACT_ATTEMPTS = 2
+MAX_RUN_CALLS = 105
 JUDGE_WEIGHTS = {
     "answer_relevance": 0.20,
     "instruction_following": 0.15,
@@ -112,7 +113,7 @@ def score_prompt(
     judge_client: CompletionClient,
     candidate_model: str = FIREWORKS_MODEL,
     judge_model: str = JUDGE_MODEL,
-    max_calls: int = 100,
+    max_calls: int = MAX_RUN_CALLS,
     max_run_tokens: int = MAX_RUN_TOKENS,
     include_holdout_details: bool = False,
     on_case_start: Callable[[int, int], None] | None = None,
@@ -141,21 +142,25 @@ def score_prompt(
     started_at = _timestamp()
     results: list[dict[str, Any]] = []
     token_usage = _empty_token_usage()
+    remaining_contract_retries = max_calls - required_calls
     for current, case in enumerate(cases, start=1):
         if on_case_start is not None:
             on_case_start(current, len(cases))
-        results.append(
-            score_case(
-                case=case,
-                participant_prompt=prompt,
-                public_directory=public_directory,
-                candidate_client=candidate_client,
-                judge_client=judge_client,
-                candidate_model=candidate_model,
-                token_usage=token_usage,
-                max_run_tokens=max_run_tokens,
-            )
+        result = score_case(
+            case=case,
+            participant_prompt=prompt,
+            public_directory=public_directory,
+            candidate_client=candidate_client,
+            judge_client=judge_client,
+            candidate_model=candidate_model,
+            token_usage=token_usage,
+            max_run_tokens=max_run_tokens,
+            judge_contract_attempts=(
+                JUDGE_CONTRACT_ATTEMPTS if remaining_contract_retries else 1
+            ),
         )
+        remaining_contract_retries -= int(result["usage"]["judge_attempts"]) - 1
+        results.append(result)
     discovery_results = [
         result for result in results if result["partition"] == "discovery"
     ]
@@ -211,7 +216,10 @@ def score_case(
     token_usage: dict[str, dict[str, int]],
     max_run_tokens: int,
     candidate_context_files: tuple[str, ...] | None = None,
+    judge_contract_attempts: int = JUDGE_CONTRACT_ATTEMPTS,
 ) -> dict[str, Any]:
+    if judge_contract_attempts < 1:
+        raise ValueError("Judge contract attempts must be positive.")
     context, evidence_ids, _ = _load_context(
         public_directory=public_directory,
         context_files=candidate_context_files or case.context_files,
@@ -260,7 +268,7 @@ def score_case(
     judge_completions: list[Completion] = []
     judge: _JudgePayload | None = None
     last_contract_error: ValueError | None = None
-    for attempt in range(JUDGE_CONTRACT_ATTEMPTS):
+    for attempt in range(judge_contract_attempts):
         messages = (
             judge_messages if attempt == 0 else _judge_repair_messages(judge_messages)
         )
