@@ -59,8 +59,17 @@ def test_root_page_is_a_participant_focused_challenge_overview() -> None:
     assert parser.has_skip_link
     assert {"header", "main", "section", "nav", "footer"} <= set(parser.tags)
     assert "Improve one prompt. Learn from every run." in html
+    for background in (
+        "HarbourCloud's support copilot",
+        "Fifty cases across ten support domains",
+        "DeepSeek V4 Flash",
+        "The shared handbook and one domain evidence pack",
+        "A single system prompt",
+    ):
+        assert background in html
     assert 'href="start/"' in html
-    assert 'href="opik/"' in html
+    assert 'href="tutorial/"' in html
+    assert 'href="submission-feedback/"' in html
     assert 'href="leaderboard/"' in html
     for noise in (
         "Public data",

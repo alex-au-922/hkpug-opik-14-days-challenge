@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Participant overview for the HKPUG Opik 14-Day Challenge.">
+    <meta name="description" content="Improve HarbourCloud's support copilot in the HKPUG Opik 14-Day Challenge.">
     <title>HKPUG Opik 14-Day Challenge | Overview</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="styles.css">
@@ -57,6 +57,70 @@
             <dd>Eight maximum</dd>
           </div>
         </dl>
+      </section>
+
+      <section class="overview-section scenario-section" aria-labelledby="scenario-title">
+        <div class="scenario-lead">
+          <div>
+            <p class="eyebrow">Challenge background</p>
+            <h2 id="scenario-title">You are tuning HarbourCloud's support copilot before it goes live.</h2>
+          </div>
+          <p>
+            HarbourCloud is a fictional multi-region SaaS company. Its support team handles policy-heavy customer questions where the correct response depends on the current records, the authority of each source, and whether support is allowed to act. Your team owns the reusable prompt that guides the copilot through those decisions.
+          </p>
+        </div>
+
+        <ol class="scenario-flow" aria-label="How one support case is processed">
+          <li>
+            <span class="scenario-step" aria-hidden="true">01</span>
+            <h3>A ticket arrives</h3>
+            <p>A customer asks about an account, payment, policy, incident, or product operation.</p>
+          </li>
+          <li>
+            <span class="scenario-step" aria-hidden="true">02</span>
+            <h3>Evidence is attached</h3>
+            <p>The shared handbook and one domain evidence pack provide the facts available for that case.</p>
+          </li>
+          <li>
+            <span class="scenario-step" aria-hidden="true">03</span>
+            <h3>Your prompt guides the model</h3>
+            <p>DeepSeek V4 Flash receives the question, the evidence, and the prompt submitted by your team.</p>
+          </li>
+          <li>
+            <span class="scenario-step" aria-hidden="true">04</span>
+            <h3>Support gets a decision</h3>
+            <p>The copilot must answer concisely, cite what it relied on, and escalate when support lacks authority.</p>
+          </li>
+        </ol>
+
+        <div class="scenario-queue">
+          <div class="scenario-queue-copy">
+            <span class="section-number">THE QUEUE</span>
+            <h3>Fifty cases across ten support domains</h3>
+            <p>
+              One prompt must work across the whole queue. A case may combine verified records with stale guidance, conflicting states, pasted customer claims, or missing approval. The goal is not to memorize answers; it is to teach the model how to choose evidence and make a safe support decision.
+            </p>
+          </div>
+          <ul class="domain-list" aria-label="Support domains in the challenge">
+            <li>Refunds</li>
+            <li>Subscriptions</li>
+            <li>Account access</li>
+            <li>API limits</li>
+            <li>Billing</li>
+            <li>Data retention</li>
+            <li>Integrations</li>
+            <li>Privacy</li>
+            <li>Security</li>
+            <li>Service incidents</li>
+          </ul>
+        </div>
+
+        <div class="scenario-pressure">
+          <strong>What you are improving</strong>
+          <p>
+            A single system prompt that consistently produces grounded, relevant, well-structured answers. After each scored run, use the returned Opik traces to find where the model trusted the wrong evidence, missed a conclusion, cited poorly, or escalated incorrectly.
+          </p>
+        </div>
       </section>
 
       <section class="overview-section" aria-labelledby="loop-title">
