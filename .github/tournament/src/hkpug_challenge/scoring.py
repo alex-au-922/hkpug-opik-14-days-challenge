@@ -36,8 +36,9 @@ from .playground import FIXED_SYSTEM_PROMPT
 
 DISCOVERY_WEIGHT = 0.75
 HOLDOUT_WEIGHT = 0.25
-MAX_RUN_TOKENS = 500_000
-JUDGE_MAX_TOKENS = 1_536
+MAX_RUN_TOKENS = 1_000_000
+JUDGE_MAX_TOKENS = 2_048
+JUDGE_CONTRACT_ATTEMPTS = 2
 JUDGE_WEIGHTS = {
     "answer_relevance": 0.20,
     "instruction_following": 0.15,
@@ -192,7 +193,8 @@ def score_prompt(
         "holdout": holdout,
         "overall_score": overall_score,
         "token_usage": token_usage,
-        "call_count": required_calls,
+        "call_count": required_calls
+        + sum(int(result["usage"]["judge_attempts"]) - 1 for result in results),
         "started_at": started_at,
         "completed_at": _timestamp(),
     }
@@ -245,27 +247,46 @@ def score_case(
         evidence_ids=evidence_ids,
     )
     judge_started_at = _timestamp()
-    judge_completion = judge_client.complete(
-        _judge_messages(
-            case=case,
-            context=judge_context,
-            candidate_answer=answer_completion.content,
-        ),
-        max_tokens=JUDGE_MAX_TOKENS,
-        response_format=scoring_judge_response_format(
-            required_point_count=len(case.rubric.required_points),
-            prohibited_claim_count=len(case.rubric.prohibited_claims),
-            non_authoritative_evidence=case.rubric.non_authoritative_evidence,
-        ),
+    judge_messages = _judge_messages(
+        case=case,
+        context=judge_context,
+        candidate_answer=answer_completion.content,
     )
-    _record_token_usage(
-        token_usage=token_usage,
-        bucket="judge",
-        completion=judge_completion,
-        max_run_tokens=max_run_tokens,
+    response_format = scoring_judge_response_format(
+        required_point_count=len(case.rubric.required_points),
+        prohibited_claim_count=len(case.rubric.prohibited_claims),
+        non_authoritative_evidence=case.rubric.non_authoritative_evidence,
     )
+    judge_completions: list[Completion] = []
+    judge: _JudgePayload | None = None
+    last_contract_error: ValueError | None = None
+    for attempt in range(JUDGE_CONTRACT_ATTEMPTS):
+        messages = (
+            judge_messages if attempt == 0 else _judge_repair_messages(judge_messages)
+        )
+        judge_completion = judge_client.complete(
+            messages,
+            max_tokens=JUDGE_MAX_TOKENS,
+            response_format=response_format,
+        )
+        judge_completions.append(judge_completion)
+        _record_token_usage(
+            token_usage=token_usage,
+            bucket="judge",
+            completion=judge_completion,
+            max_run_tokens=max_run_tokens,
+        )
+        try:
+            judge = _parse_judge(judge_completion.content, case=case)
+            break
+        except ValueError as exc:
+            last_contract_error = exc
+    if judge is None:
+        assert last_contract_error is not None
+        raise last_contract_error
     judge_completed_at = _timestamp()
-    judge = _parse_judge(judge_completion.content, case=case)
+    judge_prompt_tokens = sum(item.prompt_tokens for item in judge_completions)
+    judge_completion_tokens = sum(item.completion_tokens for item in judge_completions)
     raw_judge_scores = _raw_judge_scores(judge)
     judge_scores = _capped_judge_scores(case=case, judge=judge)
     cap_explanations = _cap_explanations(
@@ -309,8 +330,9 @@ def score_case(
         "usage": {
             "answer_prompt_tokens": answer_completion.prompt_tokens,
             "answer_completion_tokens": answer_completion.completion_tokens,
-            "judge_prompt_tokens": judge_completion.prompt_tokens,
-            "judge_completion_tokens": judge_completion.completion_tokens,
+            "judge_prompt_tokens": judge_prompt_tokens,
+            "judge_completion_tokens": judge_completion_tokens,
+            "judge_attempts": len(judge_completions),
         },
         "timing": {
             "answer_started_at": answer_started_at,
@@ -413,12 +435,29 @@ def _judge_messages(
                 "merely identifies as non-authoritative. Use empty arrays when none "
                 "apply. Every audit array must contain unique, zero-based indexes or "
                 "IDs only; never repeat an item and never invent one outside the "
-                "supplied rubric. Return one JSON object with the three tier scores, every audit "
-                "field present in the response schema, and a reasons object containing "
-                "one short reason for each score."
+                "supplied rubric. Return one JSON object with the three tier scores, "
+                "every audit field present in the response schema, and a reasons "
+                "object containing one reason of at most 20 words for each score. Do "
+                "not include analysis, reasoning, markdown, or text outside that JSON "
+                "object."
             ),
         },
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    )
+
+
+def _judge_repair_messages(messages: tuple[Message, ...]) -> tuple[Message, ...]:
+    system = messages[0]
+    return (
+        {
+            "role": "system",
+            "content": (
+                system["content"]
+                + " Your previous response violated the response contract. Return a "
+                "complete, compact replacement JSON object now."
+            ),
+        },
+        *messages[1:],
     )
 
 

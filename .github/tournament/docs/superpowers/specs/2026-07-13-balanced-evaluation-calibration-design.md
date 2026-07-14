@@ -36,10 +36,10 @@ Questions contain at most 80 words. Reference answers retain the existing 100-wo
 ## Token Budget
 
 - One complete attempt always evaluates all 50 cases with 100 model calls.
-- Candidate and judge prompt and completion usage together must remain at or below 500,000 tokens.
+- Candidate and judge prompt and completion usage together must remain at or below 1,000,000 tokens.
 - The current production calibration measured 319,359 tokens for 40 discovery cases, projecting approximately 399,000 for all 50.
 - Public context files are frozen for this revision. The rebuilt bank must retain at least 15% measured headroom below the hard limit.
-- Scoring reports aggregate total token usage and fails closed if reported usage exceeds 500,000.
+- Scoring reports aggregate total token usage and fails closed if reported usage exceeds 1,000,000.
 
 ## Calibration Attempts
 

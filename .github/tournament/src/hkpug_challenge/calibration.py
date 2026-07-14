@@ -29,7 +29,7 @@ from .fireworks import (
 from .scoring import MAX_RUN_TOKENS, score_prompt
 
 
-TARGET_RUN_TOKENS = 425_000
+TARGET_RUN_TOKENS = 850_000
 PROFILE_SPECS = (
     ("output_contract", "attempt-01.txt"),
     ("evidence_authority", "attempt-02.txt"),

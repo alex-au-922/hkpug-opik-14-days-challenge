@@ -251,6 +251,13 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
     assert "# Source file: contexts/company_handbook.md" not in judge_payload["context"]
     assert "# Source file: contexts/domain.md" in judge_payload["context"]
 
+    bundle = build_trace_bundle(result)
+    assert len(bundle["trace_payload.json"]["traces"]) == 40
+    assert len(bundle["span_payload.json"]["spans"]) == 80
+    serialized_bundle = json.dumps(bundle)
+    assert "HOLD-01" not in serialized_bundle
+    assert "holdout question" not in serialized_bundle
+
 
 def test_score_prompt_uses_longer_budget_for_experimental_candidate(
     tmp_path: Path,
@@ -274,8 +281,7 @@ def test_score_prompt_uses_longer_budget_for_experimental_candidate(
     )
 
     assert all(
-        call[1] == EXPERIMENTAL_CANDIDATE_MAX_TOKENS
-        for call in answer_client.calls
+        call[1] == EXPERIMENTAL_CANDIDATE_MAX_TOKENS for call in answer_client.calls
     )
 
 
@@ -546,7 +552,7 @@ def test_score_prompt_rejects_semantic_audit_values_outside_case_rubric(
             cases=make_cases(),
             public_directory=public,
             candidate_client=FakeCompletionClient([valid_answer()] * 50),
-            judge_client=FakeCompletionClient([json.dumps(response)]),
+            judge_client=FakeCompletionClient([json.dumps(response)] * 2),
         )
 
 
@@ -566,7 +572,7 @@ def test_score_prompt_reports_redacted_judge_contract_shape(
             cases=make_cases(),
             public_directory=public,
             candidate_client=FakeCompletionClient([valid_answer()] * 50),
-            judge_client=FakeCompletionClient([json.dumps(response)]),
+            judge_client=FakeCompletionClient([json.dumps(response)] * 2),
         )
 
     message = str(raised.value)
@@ -612,7 +618,7 @@ def test_score_prompt_uses_documented_default_run_token_limit(tmp_path: Path) ->
     )
     judge_client = FakeCompletionClient([])
 
-    with pytest.raises(ValueError, match="500000 token limit"):
+    with pytest.raises(ValueError, match="1000000 token limit"):
         score_prompt(
             team_id="team-01",
             attempt=1,
@@ -764,10 +770,12 @@ def test_score_prompt_rejects_unapproved_model_configuration_before_calls(
     assert judge_client.calls == []
 
 
-def test_score_prompt_does_not_retry_invalid_judge_output(tmp_path: Path) -> None:
+def test_score_prompt_retries_invalid_judge_output_once_then_fails(
+    tmp_path: Path,
+) -> None:
     public = write_contexts(tmp_path)
     answer_client = FakeCompletionClient([valid_answer()] * 50)
-    judge_client = FakeCompletionClient(["not-json"])
+    judge_client = FakeCompletionClient(["not-json", "still-not-json"])
 
     with pytest.raises(ValueError, match="Judge response"):
         score_prompt(
@@ -782,7 +790,37 @@ def test_score_prompt_does_not_retry_invalid_judge_output(tmp_path: Path) -> Non
         )
 
     assert len(answer_client.calls) == 1
-    assert len(judge_client.calls) == 1
+    assert len(judge_client.calls) == 2
+    assert judge_client.calls[0][0] != judge_client.calls[1][0]
+    assert "compact replacement JSON" in judge_client.calls[1][0][0]["content"]
+
+
+def test_score_prompt_recovers_from_one_invalid_judge_response(
+    tmp_path: Path,
+) -> None:
+    public = write_contexts(tmp_path)
+    judge_client = FakeCompletionClient(
+        ["not-json", judge_response(), *([judge_response()] * 49)]
+    )
+
+    result = score_prompt(
+        team_id="team-01",
+        attempt=1,
+        run_id="run-contract-retry",
+        participant_prompt="Return JSON.",
+        cases=make_cases(),
+        public_directory=public,
+        candidate_client=FakeCompletionClient([valid_answer()] * 50),
+        judge_client=judge_client,
+    )
+
+    assert result["call_count"] == 101
+    assert len(judge_client.calls) == 51
+    first_case = result["discovery"]["cases"][0]
+    assert first_case["usage"]["judge_attempts"] == 2
+    assert first_case["usage"]["judge_prompt_tokens"] == 200
+    assert first_case["usage"]["judge_completion_tokens"] == 40
+    assert result["token_usage"]["judge"]["total_tokens"] == 6_120
 
 
 @pytest.mark.parametrize(
@@ -805,7 +843,7 @@ def test_score_prompt_rejects_non_tier_judge_scores(
             cases=make_cases(),
             public_directory=public,
             candidate_client=FakeCompletionClient([valid_answer()] * 50),
-            judge_client=FakeCompletionClient([json.dumps(response)]),
+            judge_client=FakeCompletionClient([json.dumps(response)] * 2),
         )
 
 

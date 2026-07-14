@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Recalibrate all 50 private tournament cases with real DeepSeek V4 Flash outputs so cumulative prompt rules produce a measurable score gradient while every run remains below 500,000 tokens.
+**Goal:** Recalibrate all 50 private tournament cases with real DeepSeek V4 Flash outputs so cumulative prompt rules produce a measurable score gradient while every run remains below 1,000,000 tokens.
 
 **Architecture:** Add a private calibration runner that executes a fixed four-profile prompt ladder through the production `score_prompt()` path and summarizes results by partition, archetype, criterion, and case. Tighten the Qwen judge contract so required conclusions and prohibited claims produce auditable semantic caps, remove participant-strategy instructions from the common handbook, then use each real calibration report to rewrite the failing private cases and repeat until all score-gradient gates pass.
 
@@ -13,7 +13,7 @@
 - Every calibration profile evaluates all 50 cases: 40 discovery and 10 holdout.
 - Candidate model is exactly `accounts/fireworks/models/deepseek-v4-flash`.
 - Judge model is exactly `accounts/fireworks/models/qwen3p7-plus`.
-- Candidate plus judge prompt and completion usage must not exceed 500,000 tokens per profile; the calibration target is at most 425,000 tokens.
+- Candidate plus judge prompt and completion usage must not exceed 1,000,000 tokens per profile; the calibration target is at most 850,000 tokens.
 - Domain policy evidence remains factually stable. The common handbook may be rewritten once to remove authority, citation, injection, escalation, and output-contract instructions that duplicate the participant prompt; after that rewrite, public contexts are frozen for every calibration round.
 - Private case questions, references, rubrics, outputs, and reports remain untracked and must never be exposed in participant-facing branches or artifacts.
 - Discovery and holdout retain the exact 8:2 archetype ratio and the same difficulty distribution.
@@ -73,7 +73,7 @@
 
 - [ ] Confirm Fireworks credits and record only the numeric available credit in the private review, never the API key.
 - [ ] Run all four profiles against all 50 cases and save actual token usage.
-- [ ] Reject the round immediately if any profile exceeds 500,000 tokens; flag profiles above 425,000 for prompt/rubric compaction.
+- [ ] Reject the round immediately if any profile exceeds 1,000,000 tokens; flag profiles above 850,000 for prompt/rubric compaction.
 - [ ] Rank failing cases by missed profile delta, generic near-perfect judge scores, discovery/holdout divergence, and unstable escalation.
 - [ ] Assign every failing case to exactly one domain rewrite batch without exposing holdout contents outside the organizer workspace.
 

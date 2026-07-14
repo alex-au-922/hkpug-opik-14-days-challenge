@@ -433,6 +433,18 @@ def test_trusted_feedback_is_encrypted_and_holdout_is_aggregate_only() -> None:
         assert forbidden not in upload_step
 
 
+def test_trusted_scoring_writes_a_safe_github_action_summary() -> None:
+    text = load_workflow(TRUSTED_WORKFLOW)
+    score_step = named_step(text, r"score.*(?:fixed )?(?:evaluation )?bank")
+    summary_step = named_step(text, r"explain.*scoring.*result")
+    encrypt_step = named_step(text, r"encrypt.*feedback")
+
+    assert text.index(score_step) < text.index(summary_step) < text.index(encrypt_step)
+    assert "scripts/write_action_summary.py" in summary_step
+    assert "--summary /tmp/private/scoring/summary.json" in summary_step
+    assert '--output "$GITHUB_STEP_SUMMARY"' in summary_step
+
+
 def test_score_comment_links_directly_to_uploaded_submission_feedback() -> None:
     text = load_workflow(TRUSTED_WORKFLOW)
     upload_step = named_step(text, r"upload.*encrypted.*feedback")

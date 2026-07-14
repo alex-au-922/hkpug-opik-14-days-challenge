@@ -204,7 +204,7 @@ def test_run_calibration_orders_profiles_and_requests_all_private_details(
     assert all(call.candidate_model == FIREWORKS_MODEL for call in scorer.calls)
     assert all(call.judge_model == JUDGE_MODEL for call in scorer.calls)
     assert all(call.max_calls == 100 for call in scorer.calls)
-    assert all(call.max_run_tokens == 500_000 for call in scorer.calls)
+    assert all(call.max_run_tokens == 1_000_000 for call in scorer.calls)
     assert len(progress) == 200
     assert progress[0] == ("output_contract", 1, 50)
     assert progress[-1] == ("uncertainty_escalation", 50, 50)
@@ -511,8 +511,8 @@ def test_run_calibration_aggregates_archetypes_case_deltas_and_gates(
 @pytest.mark.parametrize(
     ("token_total", "hard_passed", "target_passed"),
     [
-        (425_001, True, False),
-        (500_001, False, False),
+        (850_001, True, False),
+        (1_000_001, False, False),
     ],
 )
 def test_run_calibration_reports_hard_and_target_token_gates(

@@ -244,6 +244,14 @@ jobs:
             --output /tmp/private/scoring \
             > /tmp/private/public-score.json
 
+      - name: Explain scoring result
+        if: env.ALREADY_SCORED != 'true'
+        working-directory: trusted/.github/tournament
+        run: >-
+          uv run --frozen python scripts/write_action_summary.py
+          --summary /tmp/private/scoring/summary.json
+          --output "$GITHUB_STEP_SUMMARY"
+
       - name: Encrypt submission feedback
         if: env.ALREADY_SCORED != 'true'
         working-directory: trusted/.github/tournament

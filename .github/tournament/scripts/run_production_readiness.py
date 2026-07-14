@@ -18,7 +18,12 @@ from hkpug_challenge.difficulty_experiment import (
 )
 from hkpug_challenge.evaluation_bank import ARCHETYPES, load_evaluation_bank
 from hkpug_challenge.fireworks import FIREWORKS_MODEL, JUDGE_MODEL, FireworksClient
-from hkpug_challenge.scoring import DISCOVERY_WEIGHT, HOLDOUT_WEIGHT, score_case
+from hkpug_challenge.scoring import (
+    DISCOVERY_WEIGHT,
+    HOLDOUT_WEIGHT,
+    MAX_RUN_TOKENS,
+    score_case,
+)
 
 
 TOURNAMENT_ROOT = Path(__file__).resolve().parents[1]
@@ -87,9 +92,16 @@ def main() -> int:
             judge_client=_judge_client(api_key),
             candidate_model=FIREWORKS_MODEL,
             token_usage=scoring_usage,
-            max_run_tokens=2**63 - 1,
+            max_run_tokens=MAX_RUN_TOKENS,
             candidate_context_files=route.context_files,
         )
+        combined_total = (
+            retrieval_usage["total_tokens"] + scoring_usage["total"]["total_tokens"]
+        )
+        if combined_total > MAX_RUN_TOKENS:
+            raise ValueError(
+                f"Production-readiness run exceeded the {MAX_RUN_TOKENS} token limit."
+            )
         gated = contract_gated_score(result)
         records.append(
             {
@@ -99,6 +111,7 @@ def main() -> int:
                 "gated_score": gated.score,
                 "gates": gated.caps,
                 "criteria": result["criteria"],
+                "judge_attempts": result["usage"]["judge_attempts"],
             }
         )
 
@@ -124,7 +137,8 @@ def main() -> int:
         "candidate_model": FIREWORKS_MODEL,
         "judge_model": JUDGE_MODEL,
         "case_count": len(records),
-        "call_count": len(records) * 3,
+        "call_count": len(records) * 2
+        + sum(int(record["judge_attempts"]) for record in records),
         "overall": overall,
         "partitions": partitions,
         "archetypes": {
@@ -250,7 +264,8 @@ def _combined_usage(
         "candidate": scoring["candidate"],
         "judge": scoring["judge"],
         "total": total,
-        "hard_limit_enforced": False,
+        "hard_limit_enforced": True,
+        "hard_limit_tokens": MAX_RUN_TOKENS,
     }
 
 

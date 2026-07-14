@@ -20,7 +20,7 @@ def test_tournament_models_have_distinct_supported_fireworks_defaults() -> None:
 
 
 def test_scoring_uses_the_documented_run_token_budget() -> None:
-    assert MAX_RUN_TOKENS == 500_000
+    assert MAX_RUN_TOKENS == 1_000_000
 
 
 def test_trusted_scoring_passes_repository_model_variables_to_the_scorer() -> None:

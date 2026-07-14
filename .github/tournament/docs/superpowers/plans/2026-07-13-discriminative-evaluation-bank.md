@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rewrite all 50 tournament evaluation cases so prompt quality produces meaningful score separation while every run stays below 500,000 total tokens.
+**Goal:** Rewrite all 50 tournament evaluation cases so prompt quality produces meaningful score separation while every run stays below 1,000,000 total tokens.
 
 **Architecture:** Keep the eleven public context documents unchanged and strengthen only the private case questions, references, and rubrics. Encode and validate one of five archetypes on every case, remove strategy from the fixed model wrapper, and aggregate actual Fireworks usage into a hard runtime budget check.
 
@@ -14,7 +14,7 @@
 - Preserve discovery difficulty counts 8 easy, 16 standard, 16 hard and holdout counts 2 easy, 4 standard, 4 hard.
 - Preserve exactly one holdout case per domain and two holdout cases per archetype.
 - Keep all files under `public/contexts/` byte-for-byte unchanged.
-- Candidate plus judge prompt and completion usage must not exceed 500,000 tokens per run.
+- Candidate plus judge prompt and completion usage must not exceed 1,000,000 tokens per run.
 - Questions contain at most 80 words and references contain at most 100 words.
 - Do not expose private questions, references, rubrics, or holdout details on participant-facing branches.
 
@@ -31,10 +31,10 @@
 - Modify: `.github/tournament/src/hkpug_challenge/playground.py`
 
 **Interfaces:**
-- Produces `EvaluationCase.archetype: str` and `MAX_RUN_TOKENS = 500_000`.
+- Produces `EvaluationCase.archetype: str` and `MAX_RUN_TOKENS = 1_000_000`.
 - `score_prompt()` returns `token_usage` with candidate, judge, and total token counts.
 
-- [ ] Add failing tests requiring all five archetypes once per domain, an 8:2 discovery/holdout split per archetype, 80-word question limits, a neutral fixed wrapper, usage aggregation, and rejection above 500,000 tokens.
+- [ ] Add failing tests requiring all five archetypes once per domain, an 8:2 discovery/holdout split per archetype, 80-word question limits, a neutral fixed wrapper, usage aggregation, and rejection above 1,000,000 tokens.
 - [ ] Run the focused tests and confirm failures identify the missing contracts.
 - [ ] Implement the smallest schema, validation, wrapper, and usage changes that satisfy the tests.
 - [ ] Run focused tests, then `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pyright`.
@@ -80,6 +80,6 @@
 
 - [ ] Publish the organizer commit and update `ORGANIZER_REF` on the participant workflow.
 - [ ] Run four sequential organizer-test submissions through the real candidate and judge models.
-- [ ] Confirm every run uses at most 425,000 tokens, retaining 15% headroom below 500,000.
+- [ ] Confirm every run uses at most 850,000 tokens, retaining 15% headroom below 1,000,000.
 - [ ] Confirm the basic prompt no longer saturates the bank and useful strategies create material, though not forced-monotonic, separation.
 - [ ] Clear organizer-test events and leaderboard data after recording the calibration results.
