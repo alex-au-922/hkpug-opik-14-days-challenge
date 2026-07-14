@@ -11,6 +11,16 @@ on:
         options:
           - difficulty-pilot
           - context-selection-bank
+      profile:
+        description: Prompt profile for the difficulty pilot
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - weak
+          - starter
+          - hardened
 
 permissions:
   contents: read
@@ -55,6 +65,7 @@ jobs:
           uv run --frozen python scripts/run_difficulty_pilot.py
           --evaluation-bank /tmp/context-selection/evaluation-bank.json
           --starter-prompt ../../starter/prompt.example.txt
+          --profile ${{ inputs.profile }}
 
       - name: Run seeded 50-case context-selection experiment
         if: inputs.experiment == 'context-selection-bank'
