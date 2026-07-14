@@ -386,7 +386,7 @@ def test_leaderboard_has_semantic_structure_and_required_states() -> None:
         "criterion-breakdown",
     } <= parser.ids
     assert "../styles.css" in parser.links
-    assert "app.js" in parser.scripts
+    assert "app.js?v=8" in parser.scripts
     assert "No scored attempts yet" in html
     assert "could not be loaded" in html
 
