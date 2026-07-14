@@ -514,6 +514,140 @@ tbody tr[data-selected="true"] {
   background: var(--teal);
 }
 
+.score-history-panel {
+  margin-top: 30px;
+  padding: 28px 0 20px;
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+.score-history-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.score-history-heading h2 {
+  margin: 2px 0 0;
+  font-size: 22px;
+}
+
+.score-history-range,
+.score-history-submissions {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-history-range {
+  margin: 5px 0 0;
+}
+
+.score-history-submissions {
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.score-history-legend {
+  display: flex;
+  min-height: 38px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px 18px;
+  margin-top: 12px;
+}
+
+.score-history-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.score-history-legend-swatch {
+  width: 24px;
+  height: 3px;
+  flex: 0 0 auto;
+  background: var(--series-color);
+}
+
+.score-history-viewport {
+  position: relative;
+  min-height: 360px;
+  margin-top: 6px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.score-history-chart {
+  display: block;
+  width: 100%;
+  min-width: 880px;
+  height: auto;
+}
+
+.score-history-empty {
+  display: grid;
+  min-height: 340px;
+  place-items: center;
+  margin: 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.score-chart-grid-line {
+  stroke: #dfe6eb;
+  stroke-width: 1;
+}
+
+.score-chart-axis-line {
+  stroke: #97a6b2;
+  stroke-width: 1;
+}
+
+.score-chart-axis-label {
+  fill: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-chart-series-line {
+  fill: none;
+  stroke: var(--series-color);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.score-chart-point {
+  fill: var(--surface);
+  stroke: var(--series-color);
+  stroke-width: 3;
+}
+
+.score-chart-label-connector {
+  stroke: var(--series-color);
+  stroke-width: 1.5;
+}
+
+.score-chart-label-box {
+  fill: var(--surface);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.score-chart-label-text {
+  fill: var(--series-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .team-detail {
   margin-top: 28px;
   padding-top: 30px;
@@ -549,8 +683,7 @@ tbody tr[data-selected="true"] {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
-  gap: 42px;
+  grid-template-columns: minmax(280px, 680px);
 }
 
 .panel-heading {
@@ -561,61 +694,6 @@ tbody tr[data-selected="true"] {
 }
 
 .panel-heading span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.run-trend {
-  display: grid;
-  min-height: 220px;
-  grid-template-columns: repeat(8, minmax(36px, 1fr));
-  align-items: end;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.run-trend li {
-  display: grid;
-  min-width: 0;
-  grid-template-rows: 24px 150px 24px;
-  gap: 6px;
-  align-items: end;
-  text-align: center;
-}
-
-.run-score {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-}
-
-.run-track {
-  display: flex;
-  height: 150px;
-  align-items: end;
-  border-bottom: 1px solid var(--line-strong);
-  background: #f7f9fa;
-}
-
-.run-bar {
-  width: 100%;
-  height: calc(var(--score) * 1%);
-  min-height: 2px;
-  background: var(--blue);
-}
-
-.run-trend li[data-best="true"] .run-bar {
-  background: var(--coral);
-}
-
-.run-trend li[data-best="true"] .run-score {
-  color: var(--coral-dark);
-}
-
-.run-label {
   color: var(--muted);
   font-size: 11px;
 }
@@ -1166,17 +1244,21 @@ footer p {
     border-top: 1px solid var(--line);
   }
 
-  .run-trend {
-    min-height: 190px;
-    gap: 6px;
+  .score-history-heading {
+    display: block;
   }
 
-  .run-trend li {
-    grid-template-rows: 22px 120px 22px;
+  .score-history-submissions {
+    display: block;
+    margin-top: 12px;
   }
 
-  .run-track {
-    height: 120px;
+  .score-history-viewport {
+    min-height: 330px;
+  }
+
+  .score-history-chart {
+    min-width: 820px;
   }
 }
 
