@@ -390,7 +390,7 @@ def test_leaderboard_has_semantic_structure_and_required_states() -> None:
         "criterion-breakdown",
     } <= parser.ids
     assert "../styles.css" in parser.links
-    assert "app.js?v=9" in parser.scripts
+    assert "app.js?v=10" in parser.scripts
     assert "No scored attempts yet" in html
     assert "could not be loaded" in html
 
@@ -403,6 +403,8 @@ def test_leaderboard_script_uses_public_json_and_safe_dom_updates() -> None:
     assert "innerHTML" not in script
     assert "renderScoreHistory" in script
     assert "scoreBounds" in script
+    assert "runningBestScores" in script
+    assert "Math.max(bestScore, run.overall_score)" in script
     assert 'path += ` H ${point.x} V ${point.y}`' in script
     assert 'historyChart.removeAttribute("hidden")' in script
     assert "Math.max(0" in script
