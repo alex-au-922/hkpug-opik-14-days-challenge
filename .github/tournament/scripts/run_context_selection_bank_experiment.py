@@ -10,7 +10,7 @@ from typing import Any
 from hkpug_challenge.context_routing import route_context
 from hkpug_challenge.evaluation_bank import load_evaluation_bank
 from hkpug_challenge.fireworks import FIREWORKS_MODEL, JUDGE_MODEL, FireworksClient
-from hkpug_challenge.scoring import _aggregate, _score_case
+from hkpug_challenge.scoring import aggregate_case_results, score_case
 from hkpug_challenge.submission import load_prompt_text
 
 
@@ -76,7 +76,7 @@ def main() -> int:
             }
         )
         results.append(
-            _score_case(
+            score_case(
                 case=case,
                 participant_prompt=participant_prompt,
                 public_directory=PUBLIC_DIRECTORY,
@@ -93,8 +93,8 @@ def main() -> int:
         result for result in results if result["partition"] == "discovery"
     ]
     holdout_results = [result for result in results if result["partition"] == "holdout"]
-    discovery = _aggregate(discovery_results)
-    holdout = _aggregate(holdout_results)
+    discovery = aggregate_case_results(discovery_results)
+    holdout = aggregate_case_results(holdout_results)
     overall_score = round(
         float(discovery["score"]) * 0.75 + float(holdout["score"]) * 0.25,
         2,

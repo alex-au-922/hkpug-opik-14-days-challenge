@@ -17,7 +17,7 @@ from hkpug_challenge.fireworks import (
     JUDGE_MODEL,
     FireworksClient,
 )
-from hkpug_challenge.scoring import _score_case  # pyright: ignore[reportPrivateUsage]
+from hkpug_challenge.scoring import score_case
 from hkpug_challenge.submission import load_prompt_text
 
 
@@ -105,7 +105,7 @@ def main() -> int:
     )
     routed_usage = _empty_scoring_usage()
     oracle_usage = _empty_scoring_usage()
-    routed_result = _score_case(
+    routed_result = score_case(
         case=_case(EXPECTED_CONTEXT_FILES),
         participant_prompt=participant_prompt,
         public_directory=PUBLIC_DIRECTORY,
@@ -116,7 +116,7 @@ def main() -> int:
         max_run_tokens=2**63 - 1,
         candidate_context_files=route.context_files,
     )
-    oracle_result = _score_case(
+    oracle_result = score_case(
         case=_case(EXPECTED_CONTEXT_FILES),
         participant_prompt=participant_prompt,
         public_directory=PUBLIC_DIRECTORY,
@@ -126,7 +126,7 @@ def main() -> int:
         token_usage=oracle_usage,
         max_run_tokens=2**63 - 1,
     )
-    output = {
+    output: dict[str, Any] = {
         "schema_version": 1,
         "seed": 0,
         "candidate_model": FIREWORKS_MODEL,

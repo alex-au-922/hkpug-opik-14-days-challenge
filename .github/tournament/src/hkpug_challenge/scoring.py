@@ -144,7 +144,7 @@ def score_prompt(
         if on_case_start is not None:
             on_case_start(current, len(cases))
         results.append(
-            _score_case(
+            score_case(
                 case=case,
                 participant_prompt=prompt,
                 public_directory=public_directory,
@@ -159,12 +159,12 @@ def score_prompt(
         result for result in results if result["partition"] == "discovery"
     ]
     holdout_results = [result for result in results if result["partition"] == "holdout"]
-    discovery = _aggregate(discovery_results)
+    discovery = aggregate_case_results(discovery_results)
     discovery["cases"] = [
         {key: value for key, value in result.items() if key != "partition"}
         for result in discovery_results
     ]
-    holdout = _aggregate(holdout_results)
+    holdout = aggregate_case_results(holdout_results)
     if include_holdout_details:
         holdout["cases"] = [
             {key: value for key, value in result.items() if key != "partition"}
@@ -198,7 +198,7 @@ def score_prompt(
     }
 
 
-def _score_case(
+def score_case(
     *,
     case: EvaluationCase,
     participant_prompt: str,
@@ -208,7 +208,7 @@ def _score_case(
     candidate_model: str,
     token_usage: dict[str, dict[str, int]],
     max_run_tokens: int,
-    candidate_context_files: tuple[str, str] | None = None,
+    candidate_context_files: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     context, evidence_ids, _ = _load_context(
         public_directory=public_directory,
@@ -322,7 +322,7 @@ def _score_case(
 
 
 def _load_context(
-    *, public_directory: Path, context_files: tuple[str, str]
+    *, public_directory: Path, context_files: tuple[str, ...]
 ) -> tuple[str, frozenset[str], str]:
     public_root = public_directory.resolve()
     parts: list[str] = []
@@ -524,9 +524,9 @@ def _parse_judge(response: str, *, case: EvaluationCase) -> _JudgePayload:
 
 def _validation_location(value: object) -> str:
     if isinstance(value, tuple):
-        parts = value
+        parts = cast(tuple[object, ...], value)
     elif isinstance(value, list):
-        parts = tuple(value)
+        parts = tuple(cast(list[object], value))
     else:
         parts = (value,)
     return ".".join(str(part) for part in parts) or "<root>"
@@ -641,7 +641,7 @@ def _record_token_usage(
         raise ValueError(f"Scoring exceeded the {max_run_tokens} token limit.")
 
 
-def _aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
+def aggregate_case_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     names = (*DETERMINISTIC_CRITERIA, *JUDGE_WEIGHTS)
     if not results:
         return {

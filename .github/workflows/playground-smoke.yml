@@ -3,14 +3,14 @@ name: Playground smoke
 on:
   workflow_dispatch:
     inputs:
-      prompt_mode:
-        description: Prompt used by the smoke run
+      experiment:
+        description: Organizer experiment to run
         required: true
-        default: baseline
+        default: difficulty-pilot
         type: choice
         options:
-          - baseline
-          - weak-control
+          - difficulty-pilot
+          - context-selection-bank
 
 permissions:
   contents: read
@@ -46,7 +46,18 @@ jobs:
             -out /tmp/context-selection/evaluation-bank.json
           chmod 600 /tmp/context-selection/evaluation-bank.json
 
+      - name: Run seeded difficulty pilot
+        if: inputs.experiment == 'difficulty-pilot'
+        working-directory: trusted/.github/tournament
+        env:
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: >-
+          uv run --frozen python scripts/run_difficulty_pilot.py
+          --evaluation-bank /tmp/context-selection/evaluation-bank.json
+          --starter-prompt ../../starter/prompt.example.txt
+
       - name: Run seeded 50-case context-selection experiment
+        if: inputs.experiment == 'context-selection-bank'
         working-directory: trusted/.github/tournament
         env:
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
@@ -58,7 +69,7 @@ jobs:
       - name: Upload scored experiment result
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: context-selection-bank-result
-          path: trusted/.github/tournament/.local/playground/context-selection-bank.json
+          name: playground-${{ inputs.experiment }}-result
+          path: trusted/.github/tournament/.local/playground/*.json
           retention-days: 1
           if-no-files-found: error
