@@ -208,8 +208,13 @@ def _score_case(
     candidate_model: str,
     token_usage: dict[str, dict[str, int]],
     max_run_tokens: int,
+    candidate_context_files: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
-    context, evidence_ids, judge_context = _load_context(
+    context, evidence_ids, _ = _load_context(
+        public_directory=public_directory,
+        context_files=candidate_context_files or case.context_files,
+    )
+    _, _, judge_context = _load_context(
         public_directory=public_directory,
         context_files=case.context_files,
     )
@@ -487,8 +492,7 @@ def _parse_judge(response: str, *, case: EvaluationCase) -> _JudgePayload:
         ) from exc
     except ValidationError as exc:
         locations = ",".join(
-            _validation_location(error.get("loc", ()))
-            for error in exc.errors()
+            _validation_location(error.get("loc", ())) for error in exc.errors()
         )
         error_types = ",".join(
             str(error.get("type", "unknown")) for error in exc.errors()

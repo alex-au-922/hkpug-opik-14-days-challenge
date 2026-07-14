@@ -18,7 +18,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       - name: Check out context-selection experiment
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -30,18 +30,35 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
 
-      - name: Run seeded context-selection experiment
+      - name: Decrypt evaluation bank
+        working-directory: trusted/.github/tournament
+        env:
+          SCORER_PRIVATE_KEY_PEM: ${{ secrets.SCORER_PRIVATE_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 /tmp/context-selection
+          printf '%s\n' "$SCORER_PRIVATE_KEY_PEM" > /tmp/context-selection/scorer-key.pem
+          chmod 600 /tmp/context-selection/scorer-key.pem
+          openssl cms -decrypt -binary -inform DER \
+            -in evaluation_bank.json.cms \
+            -inkey /tmp/context-selection/scorer-key.pem \
+            -recip public_keys/scorer_cert.pem \
+            -out /tmp/context-selection/evaluation-bank.json
+          chmod 600 /tmp/context-selection/evaluation-bank.json
+
+      - name: Run seeded 50-case context-selection experiment
         working-directory: trusted/.github/tournament
         env:
           FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
         run: >-
-          uv run --frozen python scripts/run_context_selection_experiment.py
+          uv run --frozen python scripts/run_context_selection_bank_experiment.py
+          --evaluation-bank /tmp/context-selection/evaluation-bank.json
           --prompt-path ../../starter/prompt.example.txt
 
       - name: Upload scored experiment result
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: context-selection-result
-          path: trusted/.github/tournament/.local/playground/context-selection.json
+          name: context-selection-bank-result
+          path: trusted/.github/tournament/.local/playground/context-selection-bank.json
           retention-days: 1
           if-no-files-found: error

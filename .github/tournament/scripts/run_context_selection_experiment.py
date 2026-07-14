@@ -106,7 +106,7 @@ def main() -> int:
     routed_usage = _empty_scoring_usage()
     oracle_usage = _empty_scoring_usage()
     routed_result = _score_case(
-        case=_case(route.context_files),
+        case=_case(EXPECTED_CONTEXT_FILES),
         participant_prompt=participant_prompt,
         public_directory=PUBLIC_DIRECTORY,
         candidate_client=candidate_client,
@@ -114,6 +114,7 @@ def main() -> int:
         candidate_model=FIREWORKS_MODEL,
         token_usage=routed_usage,
         max_run_tokens=2**63 - 1,
+        candidate_context_files=route.context_files,
     )
     oracle_result = _score_case(
         case=_case(EXPECTED_CONTEXT_FILES),
