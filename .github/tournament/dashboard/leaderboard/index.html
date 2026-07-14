@@ -7,7 +7,7 @@
     <title>HKPUG Opik Challenge | Standings</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="../styles.css">
-    <script src="app.js?v=8" defer></script>
+    <script src="app.js?v=9" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to standings</a>
@@ -99,6 +99,38 @@
         </div>
 
         <div id="dashboard-content" hidden>
+          <section class="score-history-panel" aria-labelledby="score-history-title">
+            <div class="score-history-heading">
+              <div>
+                <p class="eyebrow">Tournament progress</p>
+                <h2 id="score-history-title">Score history</h2>
+                <p id="score-history-range" class="score-history-range">No score range yet</p>
+              </div>
+              <span id="score-history-submissions" class="score-history-submissions">
+                0 scored runs
+              </span>
+            </div>
+            <div id="score-history-legend" class="score-history-legend"></div>
+            <div class="score-history-viewport" tabindex="0" aria-label="Scrollable score history chart">
+              <svg
+                id="score-history-chart"
+                class="score-history-chart"
+                viewBox="0 0 1200 500"
+                role="img"
+                aria-labelledby="score-history-svg-title score-history-svg-description"
+                hidden
+              >
+                <title id="score-history-svg-title">Official score history by team</title>
+                <desc id="score-history-svg-description">
+                  Step lines show each team's official score after every scored run.
+                </desc>
+              </svg>
+              <p id="score-history-empty" class="score-history-empty">
+                Score history appears after the first scored run.
+              </p>
+            </div>
+          </section>
+
           <div class="table-shell" tabindex="0" aria-label="Scrollable leaderboard table">
             <table>
               <caption>
@@ -146,14 +178,6 @@
             </div>
 
             <div class="detail-grid">
-              <section class="run-panel" aria-labelledby="run-trend-title">
-                <div class="panel-heading">
-                  <h3 id="run-trend-title">Run trend</h3>
-                  <span>Official score by attempt</span>
-                </div>
-                <ol id="run-trend" class="run-trend"></ol>
-              </section>
-
               <section class="criteria-panel" aria-labelledby="criteria-title">
                 <div class="panel-heading">
                   <h3 id="criteria-title">Best-run criteria</h3>

@@ -381,12 +381,16 @@ def test_leaderboard_has_semantic_structure_and_required_states() -> None:
         "loading-state",
         "empty-state",
         "error-state",
+        "score-history-chart",
+        "score-history-empty",
+        "score-history-legend",
+        "score-history-range",
+        "score-history-submissions",
         "team-detail",
-        "run-trend",
         "criterion-breakdown",
     } <= parser.ids
     assert "../styles.css" in parser.links
-    assert "app.js?v=8" in parser.scripts
+    assert "app.js?v=9" in parser.scripts
     assert "No scored attempts yet" in html
     assert "could not be loaded" in html
 
@@ -397,7 +401,12 @@ def test_leaderboard_script_uses_public_json_and_safe_dom_updates() -> None:
     assert 'fetch("leaderboard.json"' in script
     assert "textContent" in script
     assert "innerHTML" not in script
-    assert "renderRunTrend" in script
+    assert "renderScoreHistory" in script
+    assert "scoreBounds" in script
+    assert 'path += ` H ${point.x} V ${point.y}`' in script
+    assert 'historyChart.removeAttribute("hidden")' in script
+    assert "Math.max(0" in script
+    assert "Math.min(100" in script
     assert "renderCriterionBreakdown" in script
 
 
