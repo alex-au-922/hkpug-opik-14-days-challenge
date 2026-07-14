@@ -6,8 +6,13 @@ from typing import Any
 import pytest
 
 from hkpug_challenge.difficulty_experiment import (
+    PRODUCTION_PROFILE_ORDER,
     adversarial_case,
+    contract_gated_score,
     gated_score,
+    production_adversarial_case,
+    production_prompt,
+    production_prompt_profiles,
     select_balanced_cases,
     select_distractor_context,
 )
@@ -164,3 +169,65 @@ def test_select_balanced_cases_fails_without_distinct_domains() -> None:
 
     with pytest.raises(ValueError, match="distinct domain"):
         select_balanced_cases(cases)
+
+
+def test_production_prompt_profiles_are_cumulative() -> None:
+    profiles = production_prompt_profiles()
+
+    assert tuple(name for name, _ in profiles) == PRODUCTION_PROFILE_ORDER
+    for (_, previous), (_, current) in zip(profiles, profiles[1:]):
+        assert current.startswith(previous)
+
+
+def test_production_prompt_rejects_unknown_profile() -> None:
+    with pytest.raises(ValueError, match="Unknown production-readiness profile"):
+        production_prompt("unknown")
+
+
+def test_production_adversarial_case_is_varied_and_deterministic() -> None:
+    cases = tuple(
+        make_case(index, archetype) for index, archetype in enumerate(ARCHETYPES)
+    )
+
+    changed = tuple(production_adversarial_case(case) for case in cases)
+
+    assert changed == tuple(production_adversarial_case(case) for case in cases)
+    assert all(
+        item.question != original.question for item, original in zip(changed, cases)
+    )
+    assert len(
+        {
+            item.question.split(original.question, 1)[1]
+            for item, original in zip(changed, cases)
+        }
+    ) == len(cases)
+
+
+def test_contract_gated_score_ignores_semantic_audit_noise() -> None:
+    result = make_result(
+        judge={
+            "audit": {
+                "required_points_met": [],
+                "prohibited_claims_present": [0],
+                "non_authoritative_evidence_used": ["DOM-ARCH-009"],
+            }
+        }
+    )
+
+    assert contract_gated_score(result).score == 94.0
+
+
+def test_contract_gated_score_caps_deterministic_failures() -> None:
+    result = make_result(
+        criteria={
+            "json_schema": 10.0,
+            "citation_validity": 10.0,
+            "evidence_coverage": 5.0,
+            "escalation": 0.0,
+        }
+    )
+
+    score = contract_gated_score(result)
+
+    assert score.score == 50.0
+    assert score.caps == ("incomplete_evidence", "wrong_escalation")

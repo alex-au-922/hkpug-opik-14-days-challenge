@@ -11,6 +11,7 @@ on:
         options:
           - difficulty-pilot
           - context-selection-bank
+          - production-readiness
       profile:
         description: Prompt profile for the difficulty pilot
         required: true
@@ -21,6 +22,10 @@ on:
           - weak
           - starter
           - hardened
+          - output-contract
+          - evidence-authority
+          - conflict-resistance
+          - uncertainty-escalation
 
 permissions:
   contents: read
@@ -77,10 +82,20 @@ jobs:
           --evaluation-bank /tmp/context-selection/evaluation-bank.json
           --prompt-path ../../starter/prompt.example.txt
 
+      - name: Run 50-case production-readiness profile
+        if: inputs.experiment == 'production-readiness'
+        working-directory: trusted/.github/tournament
+        env:
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: >-
+          uv run --frozen python scripts/run_production_readiness.py
+          --evaluation-bank /tmp/context-selection/evaluation-bank.json
+          --profile ${{ inputs.profile }}
+
       - name: Upload scored experiment result
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: playground-${{ inputs.experiment }}-result
+          name: playground-${{ inputs.experiment }}-${{ inputs.profile }}-result
           path: trusted/.github/tournament/.local/playground/*.json
           retention-days: 1
           if-no-files-found: error
