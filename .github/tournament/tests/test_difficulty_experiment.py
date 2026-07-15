@@ -172,8 +172,10 @@ def test_production_prompt_profiles_are_cumulative() -> None:
     profiles = production_prompt_profiles()
 
     assert tuple(name for name, _ in profiles) == PRODUCTION_PROFILE_ORDER
-    for (_, previous), (_, current) in zip(profiles, profiles[1:]):
+    for (_, previous), (_, current) in zip(profiles[:2], profiles[1:3]):
         assert current.startswith(previous)
+    assert profiles[3][1].startswith(profiles[0][1])
+    assert not profiles[3][1].startswith(profiles[2][1])
 
 
 def test_production_prompt_profiles_route_context_and_label_review_clauses() -> None:
@@ -206,15 +208,14 @@ def test_production_prompt_profiles_route_context_and_label_review_clauses() -> 
     normalized_escalation = " ".join(escalation.split())
     assert "Evidence basis" in escalation
     assert "Conditions" in escalation
-    assert '"Rejected evidence:" clause inside the existing answer string' in escalation
-    assert "classify the review issue" in escalation
-    assert "unsupported customer pressure" in escalation
-    assert "named stale or conflicting record" in escalation
-    assert "copied instructions or attachments" in escalation
-    assert "multiple controlling sources" in escalation
+    assert "Classify the case" in escalation
+    assert "Direct policy" in escalation
+    assert "Named stale or conflicting source" in escalation
+    assert "Copied instruction or attachment" in escalation
+    assert "Multiple controlling sources" in escalation
     assert "set escalate to true" in escalation
     assert "answer within 85 words" in normalized_escalation
-    assert "Do not expose this classification" in escalation
+    assert "Do not expose this classification" in normalized_escalation
 
 
 def test_production_prompt_rejects_unknown_profile() -> None:
