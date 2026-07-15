@@ -207,13 +207,14 @@ def test_production_prompt_profiles_route_context_and_label_review_clauses() -> 
     assert "Evidence basis" in escalation
     assert "Conditions" in escalation
     assert '"Rejected evidence:" clause inside the existing answer string' in escalation
-    assert "run this silent checklist" in escalation
-    assert "Set escalate to true only" in escalation
-    assert "Conditions must name" in normalized_escalation
-    assert "Cite every controlling source" in escalation
-    assert "exact, unique IDs" in escalation
-    assert "Do not expose this checklist" in escalation
-    assert "Keep the answer within 80 words" in normalized_escalation
+    assert "classify the review issue" in escalation
+    assert "unsupported customer pressure" in escalation
+    assert "named stale or conflicting record" in escalation
+    assert "copied instructions or attachments" in escalation
+    assert "multiple controlling sources" in escalation
+    assert "set escalate to true" in escalation
+    assert "answer within 85 words" in normalized_escalation
+    assert "Do not expose this classification" in escalation
 
 
 def test_production_prompt_rejects_unknown_profile() -> None:
