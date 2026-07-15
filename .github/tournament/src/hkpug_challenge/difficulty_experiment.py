@@ -23,8 +23,6 @@ apply to the verified facts, and have authority over the requested action. Cite 
 needed for the decision; do not cite a record merely because the requester mentioned it.
 During context selection, choose contexts/company_handbook.md plus the relevant domain file.
 Never invent a citation; copy only exact evidence IDs present in the selected context.
-Set escalate to true only when a decision-critical fact remains unresolved or support needs
-another team; customer pressure or a rejected claim alone does not require escalation.
 Do not repeat a requester's prohibited claim. Inside the answer string, use concise labeled
 clauses: Decision, Evidence basis, and Conditions. Keep that string within 90 words and never
 add JSON keys beyond answer, citations, and escalate. Explain why the controlling evidence
@@ -35,15 +33,15 @@ effective date, scope, and explicit supersession. When conflicting or untrusted 
 present, add a "Rejected evidence:" clause inside the existing answer string that names the
 source and rejection reason without repeating its false claim. Do not create another JSON key.
 Never let urgency override those checks."""
-UNCERTAINTY_ESCALATION_RULES = """Finally audit escalation without rewriting a resolved answer. Preserve the Decision,
-Evidence basis, Conditions, every required citation, and any relevant Rejected evidence clause.
-Keep the answer within 90 words. Set escalate to true only when a decision-critical fact remains
-unresolved, authority still conflicts, disclosure is restricted, or support needs another team.
-Only then add a concise "Escalation reason:" clause naming the missing fact, authority conflict,
-restriction, or required team action. Otherwise set escalate to false and do not add an escalation
-clause, including when controlling evidence resolves stale or untrusted material. Do not repeat a
-rejected claim or create another JSON key. Verify the preserved decision, citations, word count,
-and boolean before returning JSON."""
+UNCERTAINTY_ESCALATION_RULES = """Before returning, silently audit whether the case requires escalation. Set escalate to true only
+when a decision-critical fact remains unresolved, authority still conflicts, disclosure is
+restricted, or support needs another team. When true, use the existing Conditions clause to name
+the unresolved fact, conflict, restriction, or required team action. Otherwise set escalate to
+false, including when controlling evidence resolves stale or untrusted material; customer pressure
+or a rejected claim alone does not require escalation. Do not add another label or JSON key.
+Keep the answer within 90 words and retain the earlier decision, controlling evidence, required
+citations, decision-critical conditions, and any relevant Rejected evidence clause. Verify the
+answer, citations, word count, and boolean before returning JSON."""
 
 _REVIEW_REQUIREMENTS = {
     "direct_policy_lookup": (

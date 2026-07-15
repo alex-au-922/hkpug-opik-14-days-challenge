@@ -186,6 +186,7 @@ def test_production_prompt_profiles_route_context_and_label_review_clauses() -> 
     assert "Evidence basis" in authority
     assert "Conditions" in authority
     assert "within 90 words" in authority
+    assert "Set escalate to true only" not in authority
     assert (
         "never add JSON keys beyond answer, citations, and escalate"
         in normalized_authority
@@ -199,17 +200,18 @@ def test_production_prompt_profiles_route_context_and_label_review_clauses() -> 
     assert "Evidence basis" in conflict
     assert "Conditions" in conflict
     assert "Escalation reason:" not in conflict
+    assert "Set escalate to true only" not in conflict
 
     escalation = profiles["uncertainty-escalation"]
     normalized_escalation = " ".join(escalation.split())
     assert "Evidence basis" in escalation
     assert "Conditions" in escalation
     assert '"Rejected evidence:" clause inside the existing answer string' in escalation
-    assert 'add a concise "Escalation reason:" clause' in escalation
-    assert "Only then" in escalation
-    assert "do not add an escalation clause" in normalized_escalation
-    assert "Preserve the Decision" in escalation
-    assert "every required citation" in escalation
+    assert "silently audit whether the case requires escalation" in escalation
+    assert "Set escalate to true only" in escalation
+    assert "use the existing Conditions clause" in normalized_escalation
+    assert "Do not add another label or JSON key" in escalation
+    assert "required citations" in normalized_escalation
     assert "Keep the answer within 90 words" in normalized_escalation
 
 
