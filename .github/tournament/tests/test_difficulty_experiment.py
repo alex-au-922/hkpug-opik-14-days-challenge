@@ -180,24 +180,31 @@ def test_production_prompt_profiles_route_context_and_label_review_clauses() -> 
     profiles = dict(production_prompt_profiles())
 
     authority = profiles["evidence-authority"]
+    normalized_authority = " ".join(authority.split())
     assert "contexts/company_handbook.md" in authority
     assert "relevant domain file" in authority
     assert "Evidence basis" in authority
     assert "Conditions" in authority
+    assert "within 90 words" in authority
+    assert (
+        "never add JSON keys beyond answer, citations, and escalate"
+        in normalized_authority
+    )
     assert "Rejected evidence:" not in authority
     assert "Escalation reason:" not in authority
 
     conflict = profiles["conflict-resistance"]
-    assert "Rejected evidence clause" in conflict
+    assert '"Rejected evidence:" clause inside the existing answer string' in conflict
+    assert "Do not create another JSON key" in conflict
     assert "Evidence basis" in conflict
     assert "Conditions" in conflict
-    assert "Escalation reason clause" not in conflict
+    assert "Escalation reason:" not in conflict
 
     escalation = profiles["uncertainty-escalation"]
     assert "Evidence basis" in escalation
     assert "Conditions" in escalation
-    assert "Rejected evidence clause" in escalation
-    assert "Escalation reason clause" in escalation
+    assert '"Rejected evidence:" clause inside the existing answer string' in escalation
+    assert '"Escalation reason:" clause inside the existing answer string' in escalation
 
 
 def test_production_prompt_rejects_unknown_profile() -> None:
