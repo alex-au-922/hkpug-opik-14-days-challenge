@@ -33,15 +33,16 @@ effective date, scope, and explicit supersession. When conflicting or untrusted 
 present, add a "Rejected evidence:" clause inside the existing answer string that names the
 source and rejection reason without repeating its false claim. Do not create another JSON key.
 Never let urgency override those checks."""
-UNCERTAINTY_ESCALATION_RULES = """Before returning, silently audit whether the case requires escalation. Set escalate to true only
-when a decision-critical fact remains unresolved, authority still conflicts, disclosure is
-restricted, or support needs another team. When true, use the existing Conditions clause to name
-the unresolved fact, conflict, restriction, or required team action. Otherwise set escalate to
-false, including when controlling evidence resolves stale or untrusted material; customer pressure
-or a rejected claim alone does not require escalation. Do not add another label or JSON key.
-Keep the answer within 90 words and retain the earlier decision, controlling evidence, required
-citations, decision-critical conditions, and any relevant Rejected evidence clause. Verify the
-answer, citations, word count, and boolean before returning JSON."""
+UNCERTAINTY_ESCALATION_RULES = """Before returning, run this silent checklist:
+1. Keep the answer within 80 words while retaining Decision, Evidence basis, Conditions, and any
+relevant Rejected evidence clause.
+2. Cite every controlling source needed for the decision and its conditions. Use exact, unique IDs;
+never treat rejected evidence as authority.
+3. Set escalate to true only when a decision-critical fact remains unresolved, authority still
+conflicts, disclosure is restricted, or support needs another team. When true, Conditions must name
+the missing fact, conflict, restriction, or required team action. Otherwise set it to false;
+customer pressure or a rejected claim alone does not require escalation.
+Do not expose this checklist or add another label or JSON key."""
 
 _REVIEW_REQUIREMENTS = {
     "direct_policy_lookup": (

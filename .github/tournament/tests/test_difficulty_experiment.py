@@ -207,12 +207,13 @@ def test_production_prompt_profiles_route_context_and_label_review_clauses() -> 
     assert "Evidence basis" in escalation
     assert "Conditions" in escalation
     assert '"Rejected evidence:" clause inside the existing answer string' in escalation
-    assert "silently audit whether the case requires escalation" in escalation
+    assert "run this silent checklist" in escalation
     assert "Set escalate to true only" in escalation
-    assert "use the existing Conditions clause" in normalized_escalation
-    assert "Do not add another label or JSON key" in escalation
-    assert "required citations" in normalized_escalation
-    assert "Keep the answer within 90 words" in normalized_escalation
+    assert "Conditions must name" in normalized_escalation
+    assert "Cite every controlling source" in escalation
+    assert "exact, unique IDs" in escalation
+    assert "Do not expose this checklist" in escalation
+    assert "Keep the answer within 80 words" in normalized_escalation
 
 
 def test_production_prompt_rejects_unknown_profile() -> None:
