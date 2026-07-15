@@ -205,10 +205,12 @@ def test_production_prompt_profiles_route_context_and_label_review_clauses() -> 
     assert "Evidence basis" in escalation
     assert "Conditions" in escalation
     assert '"Rejected evidence:" clause inside the existing answer string' in escalation
-    assert '"Escalation reason:" clause inside the existing answer string' in escalation
+    assert 'add a concise "Escalation reason:" clause' in escalation
+    assert "Only then" in escalation
+    assert "do not add an escalation clause" in normalized_escalation
     assert "Preserve the Decision" in escalation
     assert "every required citation" in escalation
-    assert "Use up to 100 words when needed" in normalized_escalation
+    assert "Keep the answer within 90 words" in normalized_escalation
 
 
 def test_production_prompt_rejects_unknown_profile() -> None:
