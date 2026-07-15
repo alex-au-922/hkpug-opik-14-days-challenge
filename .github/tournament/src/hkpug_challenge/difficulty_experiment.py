@@ -35,13 +35,13 @@ effective date, scope, and explicit supersession. When conflicting or untrusted 
 present, add a "Rejected evidence:" clause inside the existing answer string that names the
 source and rejection reason without repeating its false claim. Do not create another JSON key.
 Never let urgency override those checks."""
-UNCERTAINTY_ESCALATION_RULES = """Separate confirmed facts from assumptions. Include every decision-critical condition and
-exception. When required facts are missing, authority conflicts, disclosure is restricted, or
-support cannot perform the action, state the safe current action and set escalate to true.
-Set escalate to false when controlling evidence resolves a stale, untrusted, or customer-supplied
-claim. Add an "Escalation reason:" clause inside the existing answer string naming the fact or
-authority condition that determines the boolean. Do not create another JSON key. Check the
-decision, citations, and escalation before returning JSON."""
+UNCERTAINTY_ESCALATION_RULES = """Finally audit escalation without replacing the earlier decision. Preserve the Decision,
+Evidence basis, Conditions, every required citation, and any Rejected evidence clause. Use up to
+100 words when needed. Set escalate to true only when a decision-critical fact remains unresolved,
+authority still conflicts, disclosure is restricted, or support needs another team. Otherwise set
+it to false, including when controlling evidence resolves stale or untrusted material. Add a short
+"Escalation reason:" clause inside the existing answer string. Do not repeat a rejected claim or
+create another JSON key. Verify the decision, citations, and boolean before returning JSON."""
 
 _REVIEW_REQUIREMENTS = {
     "direct_policy_lookup": (

@@ -11,6 +11,7 @@ from typing import Any, cast
 from pydantic import (
     BaseModel,
     ConfigDict,
+    StrictBool,
     StrictInt,
     StrictStr,
     ValidationError,
@@ -27,6 +28,7 @@ from .fireworks import (
     JUDGE_TIERS,
     JUDGE_MODEL,
     CompletionClient,
+    JsonObject,
     scoring_judge_response_format,
     validate_scoring_models,
 )
@@ -53,6 +55,23 @@ DETERMINISTIC_CRITERIA = (
 )
 SHARED_CONTEXT_PATH = "contexts/company_handbook.md"
 MANAGER_REVIEW_PREFIX = "Manager review "
+
+
+class _AnswerPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    answer: StrictStr
+    citations: tuple[StrictStr, ...]
+    escalate: StrictBool
+
+
+ANSWER_RESPONSE_FORMAT: JsonObject = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "support_answer",
+        "schema": _AnswerPayload.model_json_schema(),
+    },
+}
 
 
 class _JudgeReasons(BaseModel):
@@ -241,6 +260,7 @@ def score_case(
             if candidate_model in EXPERIMENTAL_CANDIDATE_MODELS
             else 256
         ),
+        response_format=ANSWER_RESPONSE_FORMAT,
     )
     _record_token_usage(
         token_usage=token_usage,
@@ -493,14 +513,16 @@ def _deterministic_scores(
     answer = payload.get("answer")
     citations_value = payload.get("citations")
     escalate = payload.get("escalate")
-    schema_valid = (
-        set(payload) == {"answer", "citations", "escalate"}
-        and isinstance(answer, str)
-        and bool(answer.strip())
-        and len(answer.split()) <= 100
-        and isinstance(citations_value, list)
-        and isinstance(escalate, bool)
-    )
+    try:
+        _AnswerPayload.model_validate(payload)
+    except ValidationError:
+        schema_valid = False
+    else:
+        schema_valid = (
+            isinstance(answer, str)
+            and bool(answer.strip())
+            and len(answer.split()) <= 100
+        )
     if schema_valid:
         scores["json_schema"] = 10.0
 

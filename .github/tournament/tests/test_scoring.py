@@ -24,6 +24,7 @@ from hkpug_challenge.fireworks import (
 from hkpug_challenge.models import Message
 from hkpug_challenge.playground import FIXED_SYSTEM_PROMPT
 from hkpug_challenge.scoring import (
+    ANSWER_RESPONSE_FORMAT,
     JUDGE_MAX_TOKENS,
     MAX_RUN_CALLS,
     MAX_RUN_TOKENS,
@@ -161,7 +162,13 @@ def test_score_prompt_returns_discovery_detail_and_hides_holdout_by_default(
 
     assert len(answer_client.calls) == 50
     assert len(judge_client.calls) == 50
-    assert all(call[1:] == (256, None) for call in answer_client.calls)
+    assert all(
+        call[1:] == (256, ANSWER_RESPONSE_FORMAT) for call in answer_client.calls
+    )
+    answer_json_schema = cast(dict[str, object], ANSWER_RESPONSE_FORMAT["json_schema"])
+    answer_schema = cast(dict[str, object], answer_json_schema["schema"])
+    assert answer_schema["additionalProperties"] is False
+    assert answer_schema["required"] == ["answer", "citations", "escalate"]
     expected_judge_format = scoring_judge_response_format(
         required_point_count=2,
         prohibited_claim_count=1,
